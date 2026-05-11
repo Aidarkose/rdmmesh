@@ -1,0 +1,62 @@
+# Пример OM ingestion workflow для rdmmesh.
+#
+# Запуск (из OM ingestion venv):
+#   metadata ingest -c rdmmesh-workflow.yaml
+#
+# Перед запуском убедиться что:
+#   1. rdmmesh REST API доступен по hostPort (см. `make up` в rdmmesh/).
+#   2. Keycloak realm `bank` доступен, client `rdmmesh-backend` confidential
+#      с serviceAccountsEnabled=true (E2 realm-bank.json).
+#   3. OM пересобран после добавления rdmmeshConnection.json в openmetadata-spec.
+#   4. OM Server поднят на hostPort из workflowConfig.
+
+source:
+  type: rdmmesh
+  serviceName: rdmmesh
+  serviceConnection:
+    config:
+      type: Rdmmesh
+      # Базовый URL rdmmesh REST. В compose-стеке rdmmesh — http://host.docker.internal:8080
+      # либо http://rdmmesh-service:8080 при ingestion'е из OM-compose.
+      hostPort: http://localhost:8080
+      # Keycloak realm-issuer. Доcкер-нетворк: http://keycloak:8080/realms/bank
+      keycloakIssuerUri: http://localhost:8090/realms/bank
+      clientId: rdmmesh-backend
+      # Dev-секрет совпадает с E2 realm-bank.json. В prod — Vault / OM secret manager.
+      clientSecret: dev-backend-secret
+      requestTimeoutSeconds: 30
+      verifySSL: false
+      schemaFilterPattern:
+        includes:
+          - ".*"
+        excludes: []
+      tableFilterPattern:
+        includes:
+          - ".*"
+        excludes: []
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      includeTables: true
+      includeViews: false
+      includeTags: false
+      # Включаем чтобы deleted_at-CodeSet'ы метились в OM как удалённые
+      # при следующем ingestion-цикле (diff с предыдущим прогоном).
+      markDeletedTables: true
+      markDeletedSchemas: true
+      # useFqnForFiltering: false — фильтр по простому имени codeset/domain
+      useFqnForFiltering: false
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: http://localhost:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      # OM bot-токен. Получить через UI: Settings → Bots → ingestion-bot → JWT;
+      # либо через REST `POST /api/v1/users/auth-mechanism`.
+      jwtToken: REPLACE_WITH_OM_BOT_JWT
