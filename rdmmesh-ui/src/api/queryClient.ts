@@ -53,6 +53,20 @@ export const qk = {
     all: () => ["subscriptions"] as const,
     one: (id: string) => ["subscriptions", id] as const,
   },
+  distribution: {
+    items: (
+      domain: string,
+      codeset: string,
+      opts: {
+        version: string | null;
+        asOf: string | null;
+        knowledgeAsOf: string | null;
+        lang: string | null;
+        page: number;
+        size: number;
+      },
+    ) => ["distribution", "items", domain, codeset, opts] as const,
+  },
   audit: {
     // queryKey включает все фильтры — при их смене React Query автоматически
     // делает refetch без manual invalidate. Стабильность ключа важна: одинаковые

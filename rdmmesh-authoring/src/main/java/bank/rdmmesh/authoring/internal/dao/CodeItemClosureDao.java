@@ -9,10 +9,11 @@ import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 /**
  * DAO для closure-table иерархий ({@code authoring.code_item_closure}).
  *
- * <p>В MVP мы пересобираем closure целиком (rebuild) при write-операциях draft'а — это
- * проще, чем делать инкрементальные ребросы. Для ожидаемых объёмов draft'а
- * (десятки–тысячи items) — приемлемо. Когда полноценный hierarchy-редактор появится в E13,
- * перенесём на инкрементальную поддержку.
+ * <p><b>E13 round 2 — closure обслуживается триггерами</b> (миграция V022):
+ * INSERT/DELETE/UPDATE-of-parent_key на {@code authoring.code_item} автоматически
+ * обновляют closure incremental'но. {@link #rebuild(java.util.UUID)} остаётся как
+ * <i>diagnostic / disaster-recovery API</i> — не вызывается в обычной работе
+ * {@code AuthoringService}.
  *
  * <p>Closure — INTRA_CODESET only (parent_key). CROSS_CODESET ссылки (parent_ref) живут
  * вне таблицы и резолвятся отдельным запросом.

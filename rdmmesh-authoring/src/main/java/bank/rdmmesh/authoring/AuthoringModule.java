@@ -9,6 +9,7 @@ import bank.rdmmesh.api.port.VersionLifecyclePort;
 import bank.rdmmesh.authoring.internal.PublishedSnapshotAdapter;
 import bank.rdmmesh.authoring.internal.VersionLifecycleAdapter;
 import bank.rdmmesh.authoring.internal.service.AuthoringService;
+import bank.rdmmesh.authoring.resource.ClosureAdminResource;
 import bank.rdmmesh.authoring.resource.CodeItemResource;
 import bank.rdmmesh.authoring.resource.CodeSetVersionResource;
 import bank.rdmmesh.authoring.resource.VersionDiffResource;
@@ -30,7 +31,8 @@ public final class AuthoringModule {
                 service,
                 new CodeSetVersionResource(service),
                 new CodeItemResource(service),
-                new VersionDiffResource(service));
+                new VersionDiffResource(service),
+                new ClosureAdminResource(service));
     }
 
     /** Read+CAS-write порт authoring'а для модулей workflow / publishing. */
@@ -47,5 +49,6 @@ public final class AuthoringModule {
             AuthoringService service,
             CodeSetVersionResource versions,
             CodeItemResource items,
-            VersionDiffResource diff) {}
+            VersionDiffResource diff,
+            ClosureAdminResource closureAdmin) {}
 }

@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
 import {
   Button,
+  DatePicker,
   Form,
   Input,
   InputNumber,
   Popconfirm,
+  Select,
   Space,
   Table,
+  Tag,
   Tooltip,
   App as AntApp,
   type TableColumnsType,
@@ -14,8 +17,9 @@ import {
 import { CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import dayjs, { type Dayjs } from "dayjs";
 
-import type { CodeItem } from "@/api/types";
+import type { CodeItem, CodeItemStatus } from "@/api/types";
 import { apiMutations, type ItemPatchBody } from "@/api/endpoints";
 import { qk } from "@/api/queryClient";
 import { ApiError } from "@/api/client";
@@ -31,8 +35,15 @@ interface Props {
 interface EditFormValues {
   labelRu?: string | null;
   labelEn?: string | null;
+  descriptionRu?: string | null;
+  descriptionEn?: string | null;
   orderIndex?: number | null;
   attributesRaw?: string | null;
+  // E13 — bitemporal + hierarchy
+  status?: CodeItemStatus | null;
+  effectiveFrom?: Dayjs | null;
+  effectiveTo?: Dayjs | null;
+  parentKeyRaw?: string | null;
 }
 
 function parseAttributes(raw: string | undefined | null): Record<string, unknown> | null {
@@ -42,6 +53,25 @@ function parseAttributes(raw: string | undefined | null): Record<string, unknown
     throw new SyntaxError("attributes must be a JSON object");
   }
   return parsed as Record<string, unknown>;
+}
+
+// E13: парсит parent_key из строки. Пустая → null (узел становится корневым).
+// "DEPT" → ["DEPT"]; JSON-array ["DEPT","DIV"] → как есть.
+function parseParentKey(raw: string | undefined | null): string[] | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("[")) {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) throw new SyntaxError("parent_key must be a JSON array");
+    return parsed.map((p) => String(p));
+  }
+  return [trimmed];
+}
+
+function formatParentKey(pk: string[] | null | undefined): string {
+  if (!pk || pk.length === 0) return "";
+  return pk.length === 1 ? pk[0] : JSON.stringify(pk);
 }
 
 export function ItemsTable({ items, editable = false, versionId, codesetId }: Props) {
@@ -101,8 +131,14 @@ export function ItemsTable({ items, editable = false, versionId, codesetId }: Pr
     form.setFieldsValue({
       labelRu: it.label_ru ?? "",
       labelEn: it.label_en ?? "",
+      descriptionRu: it.description_ru ?? "",
+      descriptionEn: it.description_en ?? "",
       orderIndex: it.order_index ?? null,
       attributesRaw: it.attributes ? JSON.stringify(it.attributes, null, 2) : "",
+      status: (it.status as CodeItemStatus | null) ?? "ACTIVE",
+      effectiveFrom: it.effective_from ? dayjs(it.effective_from) : null,
+      effectiveTo: it.effective_to ? dayjs(it.effective_to) : null,
+      parentKeyRaw: formatParentKey(it.parent_key),
     });
     setEditingId(it.id);
   };
@@ -120,8 +156,10 @@ export function ItemsTable({ items, editable = false, versionId, codesetId }: Pr
       return;
     }
     let attributes: Record<string, unknown> | null;
+    let parentKey: string[] | null;
     try {
       attributes = parseAttributes(values.attributesRaw ?? "");
+      parentKey = parseParentKey(values.parentKeyRaw);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       message.error(`${t("items.parseError")}: ${msg}`);
@@ -137,8 +175,14 @@ export function ItemsTable({ items, editable = false, versionId, codesetId }: Pr
         expected_row_version: it.row_version,
         label_ru: values.labelRu?.trim() || null,
         label_en: values.labelEn?.trim() || null,
+        description_ru: values.descriptionRu?.trim() || null,
+        description_en: values.descriptionEn?.trim() || null,
         order_index: values.orderIndex ?? null,
         attributes,
+        status: values.status ?? null,
+        effective_from: values.effectiveFrom ? values.effectiveFrom.format("YYYY-MM-DD") : null,
+        effective_to: values.effectiveTo ? values.effectiveTo.format("YYYY-MM-DD") : null,
+        parent_key: parentKey,
       },
     });
   };
@@ -169,6 +213,23 @@ export function ItemsTable({ items, editable = false, versionId, codesetId }: Pr
           </code>
         ),
         width: 200,
+      },
+      {
+        title: t("items.parentKey"),
+        key: "parent_key",
+        width: 160,
+        render: (_, row) =>
+          renderEdit(
+            <Form.Item name="parentKeyRaw" style={{ margin: 0 }} extra={t("items.parentKeyHint")}>
+              <Input size="small" placeholder='DEPT / ["DEPT","DIV"]' />
+            </Form.Item>,
+            row.id,
+            row.parent_key && row.parent_key.length > 0 ? (
+              <code>{formatParentKey(row.parent_key)}</code>
+            ) : (
+              ""
+            ),
+          ),
       },
       {
         title: t("items.labelRu"),
@@ -242,8 +303,59 @@ export function ItemsTable({ items, editable = false, versionId, codesetId }: Pr
             row.order_index ?? "",
           ),
       },
-      { title: t("items.status"), dataIndex: "status", key: "status", width: 100 },
-      { title: t("items.rowVersion"), dataIndex: "row_version", key: "row_version", width: 110 },
+      {
+        title: t("items.status"),
+        key: "status",
+        width: 120,
+        render: (_, row) =>
+          renderEdit(
+            <Form.Item name="status" style={{ margin: 0 }}>
+              <Select<CodeItemStatus>
+                size="small"
+                style={{ width: "100%" }}
+                options={[
+                  { value: "ACTIVE", label: t("items.statusValues.ACTIVE") },
+                  { value: "RETIRED", label: t("items.statusValues.RETIRED") },
+                ]}
+              />
+            </Form.Item>,
+            row.id,
+            row.status ? (
+              <Tag color={row.status === "ACTIVE" ? "green" : "default"}>
+                {t(`items.statusValues.${row.status}`)}
+              </Tag>
+            ) : (
+              ""
+            ),
+          ),
+      },
+      {
+        title: t("items.effectiveFrom"),
+        key: "effective_from",
+        width: 150,
+        render: (_, row) =>
+          renderEdit(
+            <Form.Item name="effectiveFrom" style={{ margin: 0 }}>
+              <DatePicker size="small" style={{ width: "100%" }} format="YYYY-MM-DD" />
+            </Form.Item>,
+            row.id,
+            row.effective_from ?? "",
+          ),
+      },
+      {
+        title: t("items.effectiveTo"),
+        key: "effective_to",
+        width: 150,
+        render: (_, row) =>
+          renderEdit(
+            <Form.Item name="effectiveTo" style={{ margin: 0 }}>
+              <DatePicker size="small" style={{ width: "100%" }} format="YYYY-MM-DD" />
+            </Form.Item>,
+            row.id,
+            row.effective_to ?? "",
+          ),
+      },
+      { title: t("items.rowVersion"), dataIndex: "row_version", key: "row_version", width: 100 },
     ];
 
     if (!editable) {
@@ -308,6 +420,58 @@ export function ItemsTable({ items, editable = false, versionId, codesetId }: Pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t, attrKeys, editingId, editable, patch.isPending, remove.isPending]);
 
+  // E13: expand-row показывает description_ru/en — в режиме редактирования это
+  // редактируемые textarea, в read-mode — текст.
+  const expandedRowRender = (row: CodeItem) => {
+    if (editingId === row.id) {
+      return (
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Form.Item
+            label={t("items.descriptionRu")}
+            name="descriptionRu"
+            style={{ marginBottom: 8 }}
+          >
+            <Input.TextArea rows={2} placeholder={t("items.descriptionHint")} />
+          </Form.Item>
+          <Form.Item
+            label={t("items.descriptionEn")}
+            name="descriptionEn"
+            style={{ marginBottom: 0 }}
+          >
+            <Input.TextArea rows={2} placeholder={t("items.descriptionHint")} />
+          </Form.Item>
+        </Space>
+      );
+    }
+    const hasDescription = row.description_ru || row.description_en;
+    if (!hasDescription) {
+      return (
+        <span style={{ color: "#888", fontSize: 12 }}>{t("items.descriptionEmpty")}</span>
+      );
+    }
+    return (
+      <Space direction="vertical" size={4}>
+        {row.description_ru && (
+          <div>
+            <Tag>ru</Tag> {row.description_ru}
+          </div>
+        )}
+        {row.description_en && (
+          <div>
+            <Tag>en</Tag> {row.description_en}
+          </div>
+        )}
+      </Space>
+    );
+  };
+
+  const expandable = {
+    expandedRowRender,
+    // Если идёт edit — раскрываем эту строку принудительно, чтобы description-textareas были видны.
+    expandedRowKeys: editingId ? [editingId] : undefined,
+    rowExpandable: () => true,
+  };
+
   const table = (
     <Table<CodeItem>
       rowKey={(r) => r.id}
@@ -317,6 +481,7 @@ export function ItemsTable({ items, editable = false, versionId, codesetId }: Pr
       pagination={false}
       scroll={{ x: "max-content", y: 480 }}
       sticky
+      expandable={expandable}
     />
   );
 

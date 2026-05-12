@@ -96,7 +96,8 @@ public final class AuthoringService {
      * иначе — bump (default — minor) от последней published.
      *
      * <p>В одной транзакции: INSERT в {@code code_set_version} + (если есть base)
-     * SELECT-INSERT items из base-версии + REBUILD closure + SET item_count.
+     * SELECT-INSERT items из base-версии + SET item_count. Closure-table обслуживается
+     * триггерами {@code code_item_closure_*} (миграция V022) — incremental update.
      */
     public CodeSetVersion createDraft(
             UUID codesetId,
@@ -155,7 +156,8 @@ public final class AuthoringService {
             if (n != 1) throw new IllegalStateException("INSERT code_set_version returned " + n);
 
             int copied = base.map(b -> cloneItems(handle, b.id(), newId)).orElse(0);
-            handle.attach(CodeItemClosureDao.class).rebuild(newId);
+            // Closure обслуживается AFTER-INSERT триггером (V022). Каждый INSERT в
+            // code_item уже подцепил свою цепочку; rebuild не нужен.
             versionDao.setItemCount(newId, copied);
 
             log.info("authoring: создан draft codeset_id={} version={} from={} items={}",
@@ -170,6 +172,32 @@ public final class AuthoringService {
             // closure уйдёт через ON DELETE CASCADE (внешний ключ) с CodeSetVersion.
             int n = handle.attach(CodeSetVersionDao.class).deleteDraft(versionId);
             return n == 1;
+        });
+    }
+
+    /**
+     * Disaster-recovery: пересобрать closure-table для указанной версии. В обычной
+     * работе обслуживание идёт триггерами (V022/V023); вызов нужен после ручных
+     * SQL-вмешательств либо когда V023 sanity check выдал WARN на старте.
+     *
+     * <p>В одной транзакции: {@code DELETE all closure-rows for versionId} +
+     * {@code WITH RECURSIVE} rebuild через actual {@code code_item}. Триггеры на
+     * {@code code_item} не дёргаются (мы не трогаем эту таблицу).
+     *
+     * @throws IllegalArgumentException если версии нет
+     */
+    public ClosureRebuildResult rebuildClosure(UUID versionId, UUID admin) {
+        return jdbi.inTransaction(handle -> {
+            VersionRow version = handle.attach(CodeSetVersionDao.class).findById(versionId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Version not found: " + versionId));
+            CodeItemClosureDao dao = handle.attach(CodeItemClosureDao.class);
+            int removed = dao.deleteAllForVersion(versionId);
+            int inserted = dao.rebuild(versionId);
+            int total = dao.countForVersion(versionId);
+            log.warn("authoring: closure rebuild version_id={} (status={}) removed={} inserted={} total={} by_admin={}",
+                    versionId, version.status(), removed, inserted, total, admin);
+            return new ClosureRebuildResult(versionId, removed, inserted, total);
         });
     }
 
@@ -228,7 +256,7 @@ public final class AuthoringService {
                 }
                 throw e;
             }
-            handle.attach(CodeItemClosureDao.class).rebuild(versionId);
+            // Closure обновляется AFTER-INSERT триггером (V022).
             int count = handle.attach(CodeItemDao.class).countByVersion(versionId);
             handle.attach(CodeSetVersionDao.class).setItemCount(versionId, count);
             log.debug("authoring: + item version_id={} key={} by={}", versionId, req.keyParts(), author);
@@ -274,7 +302,8 @@ public final class AuthoringService {
                         "Stale row_version for item " + itemId + ": expected "
                                 + patch.expectedRowVersion() + " (current " + current.rowVersion() + ")");
             }
-            handle.attach(CodeItemClosureDao.class).rebuild(versionId);
+            // Closure обновляется AFTER-UPDATE-OF-parent_key триггером (V022).
+            // На UPDATE без изменения parent_key триггер — no-op (см. V022).
             log.debug("authoring: ~ item version_id={} id={} by={}", versionId, itemId, author);
             return AuthoringMappers.toItem(dao.findById(itemId).orElseThrow());
         });
@@ -286,7 +315,7 @@ public final class AuthoringService {
             CodeItemDao dao = handle.attach(CodeItemDao.class);
             int n = dao.deleteInDraft(itemId);
             if (n == 0) return false;
-            handle.attach(CodeItemClosureDao.class).rebuild(versionId);
+            // Closure обновляется AFTER-DELETE триггером (V022).
             int count = dao.countByVersion(versionId);
             handle.attach(CodeSetVersionDao.class).setItemCount(versionId, count);
             log.debug("authoring: - item version_id={} id={} by={}", versionId, itemId, author);
@@ -359,7 +388,7 @@ public final class AuthoringService {
                     added++;
                 }
             }
-            handle.attach(CodeItemClosureDao.class).rebuild(versionId);
+            // Closure обновляется построчно AFTER-триггерами (V022).
             int count = dao.countByVersion(versionId);
             handle.attach(CodeSetVersionDao.class).setItemCount(versionId, count);
             log.info("authoring: bulk upsert version_id={} added={} updated={} unchanged={} by={}",
@@ -529,6 +558,9 @@ public final class AuthoringService {
     }
 
     public record BulkError(int rowIndex, List<String> keyParts, String field, String message) {}
+
+    /** Результат disaster-recovery closure rebuild'а. */
+    public record ClosureRebuildResult(UUID versionId, int removed, int inserted, int total) {}
 
     private record VersionContext(UUID codesetId, int schemaVersion, String schemaText) {}
 

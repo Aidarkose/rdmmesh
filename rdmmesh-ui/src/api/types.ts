@@ -262,6 +262,37 @@ export interface AuditFilters {
   q?: string | null;
 }
 
+// ─── Distribution (camelCase, см. RdmDistributionResource — Java records без @JsonProperty) ───
+//
+// Внимание: формат отличается от authoring/ItemsPage (там snake_case).
+// Distribution отдаёт уже-выбранный label (по lang), без раздельных label_ru/label_en.
+
+export interface DistributionItem {
+  keyParts: string[];
+  parentKey?: string[] | null;
+  label?: string | null;
+  description?: string | null;
+  attributes?: Record<string, unknown> | null;
+  orderIndex?: number | null;
+  status?: CodeItemStatus | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+}
+
+export interface DistributionItemsPage {
+  domain: string;
+  codeset: string;
+  version: string;
+  versionId: string;
+  status: VersionStatus;
+  contentHash?: string | null;
+  publishedAt?: string | null;
+  page: number;
+  size: number;
+  total: number;
+  items: DistributionItem[];
+}
+
 // ─── Bulk import (snake_case, см. rdmmesh-spec/schema/api/bulk-import-result.json) ───
 
 export type BulkStatus = "APPLIED" | "REJECTED";

@@ -111,7 +111,54 @@
     "deleteConfirmDescription": "Запись будет удалена из текущей DRAFT-версии.",
     "editSuccess": "Запись обновлена",
     "deleteSuccess": "Запись удалена",
-    "optimisticConflict": "Запись была изменена другим пользователем. Данные обновлены — повторите редактирование."
+    "optimisticConflict": "Запись была изменена другим пользователем. Данные обновлены — повторите редактирование.",
+    "parentKey": "Parent",
+    "parentKeyHint": "Ключ родительского узла для иерархии. Пусто — корневой узел. Composite: JSON-массив.",
+    "descriptionRu": "Описание (ru)",
+    "descriptionEn": "Описание (en)",
+    "descriptionHint": "Расширенное описание записи. Хранится в БД, доступно через distribution API.",
+    "descriptionEmpty": "Описание не задано",
+    "effectiveFrom": "Действует с",
+    "effectiveTo": "Действует по",
+    "viewGrid": "Таблица",
+    "viewTree": "Дерево",
+    "statusValues": {
+      "ACTIVE": "ACTIVE",
+      "RETIRED": "RETIRED"
+    }
+  },
+  "tree": {
+    "dragHint": "Перетащите узел в другой родительский узел для изменения parent_key. Drop в gap = sibling.",
+    "moveSuccess": "Узел перемещён",
+    "dropCycle": "Нельзя перенести узел внутрь собственного поддерева (цикл)",
+    "dropUnknown": "Узел не найден",
+    "dropMissingRowVersion": "row_version отсутствует — обновите страницу"
+  },
+  "closure": {
+    "rebuildButton": "Rebuild closure",
+    "rebuildTooltip": "Disaster-recovery: пересобрать closure-table версии (admin)",
+    "rebuildConfirmTitle": "Пересобрать closure-table?",
+    "rebuildConfirmDescription": "TRUNCATE + WITH RECURSIVE walk через текущие code_item. Нужно только при инциденте — в нормальной работе closure обслуживается триггерами V022/V023.",
+    "rebuildOk": "Пересобрать",
+    "rebuildSuccess": "Closure пересобрана: -{{removed}} / +{{inserted}} (всего {{total}})"
+  },
+  "consumer": {
+    "button": "Просмотр как consumer",
+    "title": "Bitemporal-просмотр (consumer-сторона)",
+    "filters": "Фильтры (distribution API)",
+    "version": "Версия",
+    "versionHint": "«published» (последняя) или конкретный semver (например 0.1.0). Пусто — current.",
+    "asOf": "as_of (effective time)",
+    "asOfHint": "Бизнес-дата: «какой справочник действовал на эту дату?»",
+    "knowledgeAsOf": "knowledge_as_of (system time)",
+    "knowledgeAsOfHint": "Системная дата: «что мы знали на момент?» — bitemporal, для регуляторного reproducibility.",
+    "lang": "Язык",
+    "apply": "Применить",
+    "reset": "Сбросить",
+    "label": "Label",
+    "totalItems": "Всего записей",
+    "versionResolved": "Резолвлено в",
+    "bitemporalActive": "Активны bitemporal-фильтры: as_of={{asOf}}, knowledge_as_of={{knowledgeAsOf}}"
   },
   "bulk": {
     "button": "Bulk-импорт",

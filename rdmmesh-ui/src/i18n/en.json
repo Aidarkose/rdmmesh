@@ -111,7 +111,54 @@
     "deleteConfirmDescription": "The item will be removed from the current DRAFT version.",
     "editSuccess": "Item updated",
     "deleteSuccess": "Item deleted",
-    "optimisticConflict": "The item was modified by another user. Data refreshed — please retry."
+    "optimisticConflict": "The item was modified by another user. Data refreshed — please retry.",
+    "parentKey": "Parent",
+    "parentKeyHint": "Parent node key for hierarchy. Empty = root node. Composite: JSON array.",
+    "descriptionRu": "Description (ru)",
+    "descriptionEn": "Description (en)",
+    "descriptionHint": "Extended description for the item. Stored in DB, exposed via distribution API.",
+    "descriptionEmpty": "No description",
+    "effectiveFrom": "Effective from",
+    "effectiveTo": "Effective to",
+    "viewGrid": "Grid",
+    "viewTree": "Tree",
+    "statusValues": {
+      "ACTIVE": "ACTIVE",
+      "RETIRED": "RETIRED"
+    }
+  },
+  "tree": {
+    "dragHint": "Drag a node onto another to change its parent_key. Drop in the gap = sibling.",
+    "moveSuccess": "Node moved",
+    "dropCycle": "Cannot drop a node into its own subtree (would create a cycle)",
+    "dropUnknown": "Node not found",
+    "dropMissingRowVersion": "row_version missing — please refresh"
+  },
+  "closure": {
+    "rebuildButton": "Rebuild closure",
+    "rebuildTooltip": "Disaster-recovery: rebuild the closure-table for this version (admin)",
+    "rebuildConfirmTitle": "Rebuild closure-table?",
+    "rebuildConfirmDescription": "TRUNCATE + WITH RECURSIVE walk over current code_item. Only needed for incident recovery — normally maintained by triggers V022/V023.",
+    "rebuildOk": "Rebuild",
+    "rebuildSuccess": "Closure rebuilt: -{{removed}} / +{{inserted}} (total {{total}})"
+  },
+  "consumer": {
+    "button": "Consumer view",
+    "title": "Bitemporal view (consumer side)",
+    "filters": "Filters (distribution API)",
+    "version": "Version",
+    "versionHint": "\"published\" (latest) or explicit semver (e.g. 0.1.0). Empty = current.",
+    "asOf": "as_of (effective time)",
+    "asOfHint": "Business date: \"which reference data was active on this date?\"",
+    "knowledgeAsOf": "knowledge_as_of (system time)",
+    "knowledgeAsOfHint": "System date: \"what did we know at this moment?\" — bitemporal, for regulatory reproducibility.",
+    "lang": "Language",
+    "apply": "Apply",
+    "reset": "Reset",
+    "label": "Label",
+    "totalItems": "Total items",
+    "versionResolved": "Resolved to",
+    "bitemporalActive": "Bitemporal filters active: as_of={{asOf}}, knowledge_as_of={{knowledgeAsOf}}"
   },
   "bulk": {
     "button": "Bulk import",

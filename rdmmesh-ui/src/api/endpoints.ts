@@ -8,8 +8,10 @@ import type {
   CodeSet,
   CodeSetSchemaDto,
   CodeSetVersion,
+  DistributionItemsPage,
   Domain,
   ItemsPage,
+  Lang,
   Subscription,
   SubscriptionFilter,
   VerifyResponse,
@@ -54,6 +56,25 @@ export const api = {
   verifyVersion: (versionId: string) =>
     apiFetch<VerifyResponse>(`/versions/${versionId}/verify`),
 
+  // Distribution (E8) — consumer-side read с bitemporal-фильтрами.
+  // `domain`/`codeset` — qualified_name (lower snake_case), не UUID.
+  distributionItems: (
+    domain: string,
+    codeset: string,
+    opts: DistributionQuery = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (opts.version) params.set("version", opts.version);
+    if (opts.asOf) params.set("as_of", opts.asOf);
+    if (opts.knowledgeAsOf) params.set("knowledge_as_of", opts.knowledgeAsOf);
+    if (opts.lang) params.set("lang", opts.lang);
+    params.set("page", String(opts.page ?? 1));
+    params.set("size", String(opts.size ?? 1000));
+    return apiFetch<DistributionItemsPage>(
+      `/rdm/${encodeURIComponent(domain)}/${encodeURIComponent(codeset)}/items?${params.toString()}`,
+    );
+  },
+
   // Subscriptions (E9, RDM_ADMIN)
   listSubscriptions: () => apiFetch<Subscription[]>("/subscriptions"),
   getSubscription: (id: string) => apiFetch<Subscription>(`/subscriptions/${id}`),
@@ -77,6 +98,16 @@ export const api = {
     return apiFetch<AuditPage>(`/audit?${params.toString()}`);
   },
 };
+
+// Distribution-side фильтры. Все опциональны — пустой объект даёт latest published.
+export interface DistributionQuery {
+  version?: string | null; // "published" | "<semver>"
+  asOf?: string | null; // ISO date YYYY-MM-DD — effective time
+  knowledgeAsOf?: string | null; // ISO instant — system time (bitemporal)
+  lang?: Lang | null;
+  page?: number; // 1-based на distribution-стороне (см. E8)
+  size?: number;
+}
 
 export interface AuditQuery {
   eventType?: string | null;
@@ -154,7 +185,22 @@ export const apiMutations = {
   // soft-delete (active=false) — backend никогда не удаляет физически
   deleteSubscription: (id: string) =>
     apiFetch<void>(`/subscriptions/${id}`, { method: "DELETE" }),
+
+  // E13 round 3 — disaster-recovery: пересобрать closure-table версии.
+  // Под @RolesAllowed("RDM_ADMIN") на backend.
+  rebuildClosure: (versionId: string) =>
+    apiFetch<ClosureRebuildResult>(`/versions/${versionId}/closure/rebuild`, {
+      method: "POST",
+    }),
 };
+
+// Возвращается из POST /versions/{id}/closure/rebuild (Java record, camelCase).
+export interface ClosureRebuildResult {
+  versionId: string;
+  removed: number;
+  inserted: number;
+  total: number;
+}
 
 export interface SubscriptionCreateRequest {
   url: string;

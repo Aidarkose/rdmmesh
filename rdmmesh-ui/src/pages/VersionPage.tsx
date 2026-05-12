@@ -6,6 +6,7 @@ import {
   Card,
   Descriptions,
   Pagination,
+  Segmented,
   Space,
   Tag,
   Timeline,
@@ -30,7 +31,12 @@ import { AddItemButton } from "@/components/AddItemModal";
 import { DeleteDraftButton } from "@/components/DeleteDraftButton";
 import { BulkImportButton } from "@/components/BulkImportModal";
 import { DiffButton } from "@/components/DiffViewer";
-import type { CodeSetVersion, VerifyResponse } from "@/api/types";
+import { ConsumerViewButton } from "@/components/ConsumerViewDrawer";
+import { HierarchyTree } from "@/components/HierarchyTree";
+import { RebuildClosureButton } from "@/components/RebuildClosureButton";
+import type { CodeSet, CodeSetVersion, Domain, VerifyResponse } from "@/api/types";
+
+type ViewMode = "grid" | "tree";
 
 export function VersionPage() {
   const { t } = useTranslation();
@@ -40,6 +46,7 @@ export function VersionPage() {
   const version = useApi(() => api.getVersion(vid), qk.versions.one(vid));
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(100);
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const itemsPage = useApi(() => api.listItems(vid, page, size), qk.versions.items(vid, page, size));
   const history = useApi(() => api.transitionHistory(vid), qk.versions.history(vid));
   // Список версий codeset'а нужен для DiffViewer (выбор from-версии). Загружаем
@@ -48,6 +55,17 @@ export function VersionPage() {
   const codesetVersions = useApi<CodeSetVersion[]>(
     () => (codesetId ? api.listVersionsByCodeSet(codesetId) : Promise.resolve([])),
     qk.versions.byCodeset(codesetId ?? "_pending"),
+  );
+  // E13: для ConsumerView Drawer нужны qualified_name domain'а и codeset'а
+  // (distribution endpoint работает по именам, не UUID).
+  const codeset = useApi<CodeSet | null>(
+    () => (codesetId ? api.getCodeSet(codesetId) : Promise.resolve(null)),
+    qk.codesets.one(codesetId ?? "_pending"),
+  );
+  const domainId = codeset.data?.domain_id ?? null;
+  const domain = useApi<Domain | null>(
+    () => (domainId ? api.getDomain(domainId) : Promise.resolve(null)),
+    qk.domains.one(domainId ?? "_pending"),
   );
   const [verify, setVerify] = useState<{ loading: boolean; data: VerifyResponse | null; error: string | null }>(
     { loading: false, data: null, error: null },
@@ -117,6 +135,16 @@ export function VersionPage() {
                   {codesetVersions.data && (
                     <DiffButton toVersion={v} versionsInCodeset={codesetVersions.data} />
                   )}
+                  {(v.status === "PUBLISHED" || v.status === "DEPRECATED") &&
+                    domain.data &&
+                    codeset.data && (
+                      <ConsumerViewButton
+                        domainName={domain.data.name}
+                        codesetName={codeset.data.name}
+                        currentVersion={v.version}
+                      />
+                    )}
+                  <RebuildClosureButton versionId={v.id} />
                 </Space>
               </div>
 
@@ -160,25 +188,48 @@ export function VersionPage() {
         <Loader {...itemsPage}>
           {(p) => (
             <>
-              <ItemsTable
-                items={p.items}
-                editable={version.data?.status === "DRAFT"}
-                versionId={vid}
-                codesetId={version.data?.codeset_id}
-              />
-              <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
-                <Pagination
-                  current={p.page + 1}
-                  pageSize={p.size}
-                  total={p.total}
-                  showSizeChanger
-                  pageSizeOptions={[50, 100, 250, 500, 1000]}
-                  onChange={(nextPage, nextSize) => {
-                    setPage(nextPage - 1);
-                    setSize(nextSize);
-                  }}
+              {codeset.data && codeset.data.hierarchy_mode !== "NONE" && (
+                <div style={{ marginBottom: 12 }}>
+                  <Segmented<ViewMode>
+                    value={viewMode}
+                    onChange={(v) => setViewMode(v as ViewMode)}
+                    options={[
+                      { label: t("items.viewGrid"), value: "grid" },
+                      { label: t("items.viewTree"), value: "tree" },
+                    ]}
+                  />
+                </div>
+              )}
+              {viewMode === "tree" && version.data ? (
+                <HierarchyTree
+                  items={p.items}
+                  versionId={vid}
+                  codesetId={version.data.codeset_id}
+                  editable={version.data.status === "DRAFT"}
                 />
-              </div>
+              ) : (
+                <>
+                  <ItemsTable
+                    items={p.items}
+                    editable={version.data?.status === "DRAFT"}
+                    versionId={vid}
+                    codesetId={version.data?.codeset_id}
+                  />
+                  <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+                    <Pagination
+                      current={p.page + 1}
+                      pageSize={p.size}
+                      total={p.total}
+                      showSizeChanger
+                      pageSizeOptions={[50, 100, 250, 500, 1000]}
+                      onChange={(nextPage, nextSize) => {
+                        setPage(nextPage - 1);
+                        setSize(nextSize);
+                      }}
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
         </Loader>
