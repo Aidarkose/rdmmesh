@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jdbi.v3.core.Jdbi;
 
 import bank.rdmmesh.api.eventbus.EventBus;
+import bank.rdmmesh.audit.internal.AuditChainHasher;
+import bank.rdmmesh.audit.internal.AuditChainVerifier;
 import bank.rdmmesh.audit.internal.AuditService;
 import bank.rdmmesh.audit.resource.AuditResource;
 
@@ -13,7 +15,8 @@ import bank.rdmmesh.audit.resource.AuditResource;
  * {@link bank.rdmmesh.api.eventbus.DomainEvent}.
  *
  * <p>{@link Resources#resource()} — REST-endpoint admin-audit-viewer'а
- * (E11.2d, handoff E10 §3 #3). Регистрируется в Jersey композиционным root'ом.
+ * (E11.2d, handoff E10 §3 #3) и verify-chain endpoint (E14 round 1).
+ * Регистрируется в Jersey композиционным root'ом.
  */
 public final class AuditModule {
 
@@ -22,7 +25,13 @@ public final class AuditModule {
     public static Resources build(Jdbi jdbi, EventBus eventBus, ObjectMapper json) {
         AuditService service = new AuditService(jdbi, json);
         service.registerOn(eventBus);
-        AuditResource resource = new AuditResource(jdbi, json);
+
+        // Hasher для verify-стороны — собственный canonical-mapper, независимый
+        // от global ObjectMapper'а (последний может быть сконфигурирован под
+        // REST-needs и не давать byte-stable сериализацию).
+        AuditChainHasher hasher = new AuditChainHasher(AuditChainHasher.defaultMapper());
+        AuditChainVerifier verifier = new AuditChainVerifier(hasher);
+        AuditResource resource = new AuditResource(jdbi, json, verifier);
         return new Resources(service, resource);
     }
 

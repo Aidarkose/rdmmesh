@@ -21,6 +21,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import bank.rdmmesh.api.security.RdmmeshPrincipal;
+import bank.rdmmesh.audit.internal.AuditChainVerifier;
 import bank.rdmmesh.audit.internal.dao.AuditLogDao;
 import io.dropwizard.auth.Auth;
 import org.jdbi.v3.core.Jdbi;
@@ -66,10 +67,12 @@ public final class AuditResource {
 
     private final Jdbi jdbi;
     private final ObjectMapper json;
+    private final AuditChainVerifier verifier;
 
-    public AuditResource(Jdbi jdbi, ObjectMapper json) {
+    public AuditResource(Jdbi jdbi, ObjectMapper json, AuditChainVerifier verifier) {
         this.jdbi = jdbi;
         this.json = json;
+        this.verifier = verifier;
     }
 
     @GET
@@ -171,11 +174,97 @@ public final class AuditResource {
         return (s == null || s.isBlank()) ? null : s;
     }
 
+    /**
+     * E14 round 1 — verify hash-chain. Открыт только {@code RDM_ADMIN}.
+     *
+     * <pre>
+     *   GET /api/v1/audit/verify-chain
+     *     [?from=&lt;id&gt;]  по умолчанию — min(id) (вся цепочка)
+     *     [?to=&lt;id&gt;]    по умолчанию — max(id)
+     * </pre>
+     *
+     * <p>Возвращает {@link VerifyChainResponse}: {@code verified=true} означает,
+     * что вся выбранная подцепочка целостна — каждая запись имеет корректные
+     * {@code prev_hash} (continuity) и {@code entry_hash} (integrity).
+     *
+     * <p>{@code firstBrokenAt} — id первой разрушенной записи; {@code reason} —
+     * текстовое описание, {@code expectedHash}/{@code storedHash} — хеши на
+     * месте разрыва. Если {@code verified=true}, эти поля {@code null}.
+     *
+     * <p>Защита от больших range'ей: размер range никак не лимитируется —
+     * пользователь сам контролирует через {@code from}/{@code to}. На пилоте
+     * (десятки/сотни записей) это не проблема. Для крупного prod'а будущий
+     * round'ом V14 добавит batch-режим (verify по chunk'ам с anchor'ами).
+     */
+    @GET
+    @Path("/verify-chain")
+    public VerifyChainResponse verifyChain(
+            @Auth RdmmeshPrincipal principal,
+            @QueryParam("from") Long fromId,
+            @QueryParam("to") Long toId) {
+
+        Long minId = jdbi.withExtension(AuditLogDao.class, AuditLogDao::findMinId).orElse(null);
+        Long maxId = jdbi.withExtension(AuditLogDao.class, AuditLogDao::findMaxId).orElse(null);
+
+        if (minId == null || maxId == null) {
+            return new VerifyChainResponse(0L, 0L, 0, true, null, null, null, null);
+        }
+
+        long from = fromId == null ? minId : fromId;
+        long to = toId == null ? maxId : toId;
+        if (from > to) {
+            throw new WebApplicationException(
+                    "from must be <= to", Response.Status.BAD_REQUEST);
+        }
+
+        // Anchor: hash записи перед range'ем. Если from = minId журнала, anchor null
+        // (verify верит, что цепочка начинается чистой). Иначе — берём entry_hash
+        // строки id=from-1, если она существует, либо null, если from опередил
+        // существующий минимум (пользователь указал что-то меньше min'а).
+        final long anchorBoundary = from - 1L;
+        final String anchorPrev;
+        if (from <= minId) {
+            anchorPrev = null;
+        } else {
+            anchorPrev = jdbi.withExtension(AuditLogDao.class, dao ->
+                    dao.findChainRange(anchorBoundary, anchorBoundary).stream()
+                            .findFirst()
+                            .map(AuditLogDao.ChainRow::entryHash)
+                            .orElse(null));
+        }
+
+        List<AuditLogDao.ChainRow> rows = jdbi.withExtension(AuditLogDao.class,
+                dao -> dao.findChainRange(from, to));
+
+        AuditChainVerifier.Result r = verifier.verify(rows, anchorPrev);
+
+        return new VerifyChainResponse(
+                from,
+                to,
+                r.checked(),
+                r.verified(),
+                r.firstBrokenAt(),
+                r.reason(),
+                r.expectedHash(),
+                r.storedHash());
+    }
+
     public record Page(
             @JsonProperty("page") int page,
             @JsonProperty("size") int size,
             @JsonProperty("total") long total,
             @JsonProperty("items") List<AuditEntryDto> items) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record VerifyChainResponse(
+            @JsonProperty("from") long from,
+            @JsonProperty("to") long to,
+            @JsonProperty("checked") int checked,
+            @JsonProperty("verified") boolean verified,
+            @JsonProperty("first_broken_at") Long firstBrokenAt,
+            @JsonProperty("reason") String reason,
+            @JsonProperty("expected_hash") String expectedHash,
+            @JsonProperty("stored_hash") String storedHash) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record AuditEntryDto(

@@ -22,9 +22,11 @@ public interface AuditLogDao {
 
     @SqlUpdate("""
             INSERT INTO audit.audit_log
-                (event_id, event_type, aggregate_type, aggregate_id, actor, occurred_at, payload)
+                (event_id, event_type, aggregate_type, aggregate_id, actor, occurred_at,
+                 payload, payload_canonical, prev_hash, entry_hash)
             VALUES
-                (:eventId, :eventType, :aggregateType, :aggregateId, :actor, :occurredAt, CAST(:payload AS jsonb))
+                (:eventId, :eventType, :aggregateType, :aggregateId, :actor, :occurredAt,
+                 CAST(:payload AS jsonb), :payloadCanonical, :prevHash, :entryHash)
             ON CONFLICT (event_id, event_type) DO NOTHING
             """)
     int insert(
@@ -34,7 +36,58 @@ public interface AuditLogDao {
             @Bind("aggregateId") UUID aggregateId,
             @Bind("actor") UUID actor,
             @Bind("occurredAt") OffsetDateTime occurredAt,
-            @Bind("payload") String payloadJson);
+            @Bind("payload") String payloadJson,
+            @Bind("payloadCanonical") String payloadCanonical,
+            @Bind("prevHash") String prevHash,
+            @Bind("entryHash") String entryHash);
+
+    /** Tail предыдущей записи цепочки — используется AuditService при write'е новой row. */
+    @SqlQuery("""
+            SELECT entry_hash
+              FROM audit.audit_log
+             ORDER BY id DESC
+             LIMIT 1
+            """)
+    java.util.Optional<String> findLastEntryHash();
+
+    /**
+     * Range для verify-chain endpoint'а. Возвращает rows в id-ASC порядке —
+     * это естественный порядок цепочки, по которому AuditService её и писал.
+     * Берём только поля, нужные для пересчёта hash'а (event_id, event_type,
+     * payload_canonical, occurred_at) + сами hash'ы для сравнения.
+     */
+    @SqlQuery("""
+            SELECT id, event_id, event_type, occurred_at,
+                   payload_canonical, prev_hash, entry_hash
+              FROM audit.audit_log
+             WHERE id >= :fromId
+               AND id <= :toId
+             ORDER BY id ASC
+            """)
+    @RegisterConstructorMapper(ChainRow.class)
+    List<ChainRow> findChainRange(@Bind("fromId") long fromId, @Bind("toId") long toId);
+
+    /** Самый ранний id в журнале — используется верификатором как default `from`. */
+    @SqlQuery("SELECT min(id) FROM audit.audit_log")
+    java.util.Optional<Long> findMinId();
+
+    /** Самый поздний id — используется верификатором как default `to`. */
+    @SqlQuery("SELECT max(id) FROM audit.audit_log")
+    java.util.Optional<Long> findMaxId();
+
+    /**
+     * Hash-chain row — минимальный slice {@code audit_log} для пересчёта SHA-256.
+     * Поля совпадают с теми, что участвуют в canonical_input
+     * (см. {@code bank.rdmmesh.audit.internal.AuditChainHasher#computeEntryHash}).
+     */
+    record ChainRow(
+            long id,
+            @ColumnName("event_id") UUID eventId,
+            @ColumnName("event_type") String eventType,
+            @ColumnName("occurred_at") OffsetDateTime occurredAt,
+            @ColumnName("payload_canonical") String payloadCanonical,
+            @ColumnName("prev_hash") String prevHash,
+            @ColumnName("entry_hash") String entryHash) {}
 
     @SqlQuery("""
             SELECT id, event_id, event_type, aggregate_type, aggregate_id, actor,
