@@ -15,8 +15,13 @@ import org.jdbi.v3.sqlobject.statement.SqlUpdate;
  * на уровне Postgres (триггеры BEFORE UPDATE/DELETE/TRUNCATE + REVOKE на роль
  * rdmmesh_app, миграция V070).
  *
- * <p>{@code ON CONFLICT DO NOTHING} использует UNIQUE-индекс {@code audit_log_event_id_uq}
- * (миграция V071) — повторный приход того же event_id не создаёт лишнюю строку.
+ * <p>{@code ON CONFLICT DO NOTHING} использует UNIQUE-констрейнт
+ * {@code (event_id, event_type, occurred_at)}. До V073 это был отдельный индекс
+ * {@code audit_log_event_id_uq (event_id, event_type)} (V071); V073 RANGE-партиционировал
+ * таблицу по {@code occurred_at}, а Postgres требует включать ключ партиции в каждый
+ * UNIQUE — поэтому {@code occurred_at} добавлен в конфликт-таргет. Идемпотентность
+ * сохранена: для replay'я одного логического события {@code occurred_at} стабилен
+ * (это {@code event.occurredAt()}, не время вставки), как и event_id+event_type.
  */
 public interface AuditLogDao {
 
@@ -27,7 +32,7 @@ public interface AuditLogDao {
             VALUES
                 (:eventId, :eventType, :aggregateType, :aggregateId, :actor, :occurredAt,
                  CAST(:payload AS jsonb), :payloadCanonical, :prevHash, :entryHash)
-            ON CONFLICT (event_id, event_type) DO NOTHING
+            ON CONFLICT (event_id, event_type, occurred_at) DO NOTHING
             """)
     int insert(
             @Bind("eventId") UUID eventId,

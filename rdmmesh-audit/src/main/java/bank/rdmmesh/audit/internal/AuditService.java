@@ -1,5 +1,8 @@
 package bank.rdmmesh.audit.internal;
 
+import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jdbi.v3.core.Jdbi;
 import org.slf4j.Logger;
@@ -28,8 +31,10 @@ import bank.rdmmesh.audit.internal.dao.AuditLogDao;
  * Дополнительно сохраняется byte-stable форма в колонке {@code payload_canonical}
  * (sorted keys, no whitespace) — она же входит в hash-input.
  *
- * <p>Idempotency: INSERT использует {@code ON CONFLICT (event_id, event_type) DO NOTHING}
- * (UNIQUE-индекс audit_log_event_id_uq, миграция V071). Replay одного и того же
+ * <p>Idempotency: INSERT использует
+ * {@code ON CONFLICT (event_id, event_type, occurred_at) DO NOTHING}
+ * (UNIQUE-констрейнт; до V073 — индекс audit_log_event_id_uq V071, V073 добавил
+ * occurred_at как ключ RANGE-партиции). Replay одного и того же
  * события не создаёт дубликата. {@code prev_hash}/{@code entry_hash} в этом случае
  * не сдвигаются — сервис заранее проверяет «уже записано?» через DAO insert,
  * получает rows=0 и пропускает.
@@ -76,6 +81,17 @@ public final class AuditService {
         AuditEventClassifier.Classification c = AuditEventClassifier.classify(event);
         Object payload = extractPayload(event);
         final String payloadCanonical = hasher.canonicalPayload(payload);
+
+        // E14 round 7 — hash-chain integrity fix. PostgreSQL ОКРУГЛЯЕТ timestamptz
+        // до микросекунд, а AuditChainHasher.formatOccurredAt УСЕКАЕТ
+        // (truncatedTo(MICROS)). Если хэшировать сырое nano-значение и дать БД
+        // округлить колонку, verify (читающий округлённую колонку) пересчитает
+        // другой entry_hash → chain не верифицируется для ~50% строк (round-1
+        // дефект, не пойман т.к. r1 smoke не гонялся). Фикс: усекаем occurred_at
+        // до µs ОДИН раз и подаём это же значение И в хэш, И в INSERT — тогда
+        // сохранённая колонка == хэшируемое значение, Postgres уже-µs не округляет.
+        final OffsetDateTime occurredAt =
+                event.occurredAt().truncatedTo(ChronoUnit.MICROS);
         final String payloadJson;
         try {
             payloadJson = json.writeValueAsString(payload);
@@ -97,7 +113,7 @@ public final class AuditService {
                         event.eventId(),
                         c.eventType(),
                         payloadCanonical,
-                        event.occurredAt());
+                        occurredAt);
 
                 return dao.insert(
                         event.eventId(),
@@ -105,7 +121,7 @@ public final class AuditService {
                         c.aggregateType(),
                         c.aggregateId(),
                         c.actor(),
-                        event.occurredAt(),
+                        occurredAt,
                         payloadJson,
                         payloadCanonical,
                         prevHash,

@@ -33,6 +33,20 @@ ALTER TABLE audit.audit_log
 
 ALTER TABLE audit.audit_log DISABLE TRIGGER audit_log_no_update;
 
+-- V070 делает REVOKE UPDATE/DELETE/TRUNCATE с rdmmesh_app, а Flyway ходит в БД
+-- именно под rdmmesh_app (он же owner таблицы). В PostgreSQL владелец сохраняет
+-- ALTER/DROP-полномочия, но DML-привилегии (UPDATE) у него тоже отзываются
+-- REVOKE'ом — поэтому backfill ниже без явного self-GRANT падает на
+-- `permission denied for table audit_log`. Скобка GRANT…REVOKE симметрична
+-- DISABLE…ENABLE TRIGGER: на время backfill'а возвращаем UPDATE, после —
+-- снимаем, восстанавливая append-only-инвариант (SPEC §3.2 #6).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rdmmesh_app') THEN
+        EXECUTE 'GRANT UPDATE ON audit.audit_log TO rdmmesh_app';
+    END IF;
+END$$;
+
 -- Шаг 1: заполняем payload_canonical для всех существующих rows.
 UPDATE audit.audit_log
    SET payload_canonical = payload::text
@@ -80,6 +94,14 @@ ALTER TABLE audit.audit_log
 -- из AuditService.
 ALTER TABLE audit.audit_log
     ALTER COLUMN entry_hash SET NOT NULL;
+
+-- Снимаем временный self-GRANT — append-only-инвариант восстановлен.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rdmmesh_app') THEN
+        EXECUTE 'REVOKE UPDATE ON audit.audit_log FROM rdmmesh_app';
+    END IF;
+END$$;
 
 ALTER TABLE audit.audit_log ENABLE TRIGGER audit_log_no_update;
 
