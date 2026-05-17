@@ -3,6 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      E14 round 8 (OWASP A05). Базовый env-агностичный CSP: только директивы без
+      script/connect/style-импликаций — безопасны и в Vite-dev, и в prod-сборке,
+      не ломают OIDC (redirect — top-level navigation, не cross-origin form).
+      Полный prod-CSP (script-src 'nonce', connect-src incl. Keycloak,
+      frame-ancestors 'none', HSTS) ставится на reverse-proxy — см. handoff
+      E14.8 §3 (frame-ancestors через <meta> игнорируется браузером by spec).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <title>rdmmesh</title>
   </head>
   <body>
