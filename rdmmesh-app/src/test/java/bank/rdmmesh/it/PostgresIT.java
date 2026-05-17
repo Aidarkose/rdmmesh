@@ -12,31 +12,34 @@ import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.postgres.PostgresPlugin;
 import org.jdbi.v3.sqlobject.SqlObjectPlugin;
 import org.junit.jupiter.api.BeforeAll;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Базовый класс для интеграционных тестов (E14 round 9). Поднимает один
- * Postgres-контейнер на класс, создаёт прод-идентичную роль
- * {@code rdmmesh_app} и прогоняет <b>реальный</b> Flyway-путь под этой ролью —
- * <em>ровно как в проде</em> (RDM_DB_USER=rdmmesh_app, см. compose +
- * E14.7 §5: миграции под rdmmesh_app, не под суперюзером — это вскрывало
- * round-1 дефекты, дожившие до round 7).
+ * База для интеграционных тестов (E14 round 9; round 14 — singleton-fix).
  *
- * <p>Локации/схемы/defaultSchema совпадают с {@code config.yml} flyway-блоком
- * и {@code RdmmeshApplication.runFlyway}. Subclass'ы получают
- * {@link #migrateResult()}, {@link #appConnection()} (под rdmmesh_app — для
- * проверок append-only/permission denied) и {@link #adminConnection()}
- * (суперюзер — setup/tamper).
+ * <p><b>JVM-singleton-контейнер.</b> Один Postgres на ВСЮ JVM, стартует в
+ * static-инициализаторе и не останавливается явно (Ryuk/JVM-exit уберёт).
+ * НЕ {@code @Container}: extension {@code @Testcontainers} останавливал бы
+ * контейнер после КАЖДОГО тест-класса, а {@code PG} — общее static-поле
+ * базы → следующий класс получал бы пустой Postgres, но {@code migrateOnce}
+ * пропускался бы по guard'у (баг round-14 CI: «schema audit does not exist»,
+ * «password authentication failed for rdmmesh_app»). Singleton + guard =
+ * миграция один раз, БД переживает все классы.
  *
- * <p><b>{@code disabledWithoutDocker = true}.</b> Если Docker-API недоступен
- * (напр. dockerized-Maven поверх Docker-Desktop/WSL2, где bind-mount
- * docker.sock = cli-прокси с desktop-stub /info → 400), весь класс
- * <em>скипается</em>, а не падает — `verify` остаётся зелёным локально, а
- * на CI/обычном dockerd IT гоняется по-настоящему. Это идиоматичный
- * Testcontainers-механизм ровно для такого окружения (handoff E14.9 §3).
+ * <p><b>Graceful skip без Docker.</b> {@code @Testcontainers(
+ * disabledWithoutDocker=true)} дизейблит класс, если Docker-API недоступен
+ * (Docker-Desktop/WSL2 + dockerized-bin/mvn, E14.9 §2). Static-init стартует
+ * контейнер ТОЛЬКО при {@code DockerClientFactory.isDockerAvailable()} (тот
+ * же признак, что у условия extension'а) — иначе {@code PG=null}, тесты
+ * скипаются и null не разыменовывается. На CI (нативный dockerd) —
+ * контейнер реально поднимается, IT исполняются и гейтят merge.
+ *
+ * <p>Flyway идёт под прод-ролью {@code rdmmesh_app} (паритет с prod,
+ * E14.7 §5). БД общая на все IT — каждый IT обязан скоупить свои данные
+ * (уникальные id/месяцы/имена), не полагаясь на пустую БД.
  */
 @Testcontainers(disabledWithoutDocker = true)
 public abstract class PostgresIT {
@@ -60,18 +63,29 @@ public abstract class PostgresIT {
             "catalog", "authoring", "workflow", "publishing", "identity", "ownership", "audit");
     private static final String DEFAULT_SCHEMA = "rdmmesh_meta";
 
-    @Container
-    @SuppressWarnings("resource") // lifecycle управляет @Testcontainers-extension
-    private static final PostgreSQLContainer<?> PG =
-            new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
+    /** JVM-singleton: стартует один раз, extension'ом НЕ управляется. */
+    @SuppressWarnings("resource")
+    private static final PostgreSQLContainer<?> PG;
+
+    static {
+        PostgreSQLContainer<?> c = null;
+        // Тот же признак, что у @Testcontainers(disabledWithoutDocker): нет
+        // Docker → контейнер не стартуем, extension скипнет класс, PG=null
+        // не разыменуется (тесты не выполняются).
+        if (DockerClientFactory.instance().isDockerAvailable()) {
+            c = new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
                     .withDatabaseName(DB)
                     .withUsername(ADMIN_USER)
                     .withPassword(ADMIN_PASS);
+            c.start();
+        }
+        PG = c;
+    }
 
     private static MigrateResult migrateResult;
     private static boolean migrated;
 
-    /** Один раз на класс: прод-роль + реальный Flyway под rdmmesh_app. */
+    /** Один раз на JVM (singleton-контейнер): прод-роль + реальный Flyway. */
     @BeforeAll
     static synchronized void migrateOnce() throws SQLException {
         if (migrated) {
@@ -112,7 +126,7 @@ public abstract class PostgresIT {
         return migrateResult;
     }
 
-    /** Под rdmmesh_app, с теми же плагинами, что RdmmeshApplication (SqlObject + Postgres). */
+    /** Под rdmmesh_app, с теми же плагинами, что RdmmeshApplication. */
     protected static Jdbi appJdbi() {
         return Jdbi.create(PG.getJdbcUrl(), APP_USER, APP_PASS)
                 .installPlugin(new SqlObjectPlugin())

@@ -49,25 +49,34 @@ final class HashChainRoundtripIT extends PostgresIT {
         SyncEventBus bus = new SyncEventBus();
         AuditModule.build(jdbi, bus, mapper); // подписывает AuditService на bus
 
+        // БД общая на все IT (singleton-контейнер, round 14). Скоупим тест
+        // к СВОЕМУ id-диапазону: запоминаем хвост ДО publish и берём его
+        // entry_hash как anchor (ровно его AuditService возьмёт prev_hash'ем
+        // первого нашего события). Чужие SQL-строки (V073/Archive — не
+        // chain-валидные) с id ≤ before в диапазон не попадают.
+        long before = jdbi.withExtension(AuditLogDao.class, AuditLogDao::findMaxId)
+                .orElse(0L);
+        String anchor = before == 0L
+                ? null
+                : jdbi.withExtension(AuditLogDao.class, d -> d.findChainRange(before, before))
+                        .get(0)
+                        .entryHash();
+
         for (int i = 0; i < 4; i++) {
             bus.publish(new ItEvent(UUID.randomUUID(), OffsetDateTime.now(), "evt-" + i));
         }
 
-        long min = jdbi.withExtension(AuditLogDao.class, AuditLogDao::findMinId)
-                .orElseThrow();
         long max = jdbi.withExtension(AuditLogDao.class, AuditLogDao::findMaxId)
                 .orElseThrow();
         List<ChainRow> rows =
-                jdbi.withExtension(AuditLogDao.class, d -> d.findChainRange(min, max));
+                jdbi.withExtension(AuditLogDao.class, d -> d.findChainRange(before + 1, max));
 
         assertThat(rows).as("4 опубликованных события записаны в chain").hasSize(4);
 
         AuditChainVerifier verifier =
                 new AuditChainVerifier(new AuditChainHasher(AuditChainHasher.defaultMapper()));
 
-        // anchorPrevHash=null корректен: rows начинаются с самой первой записи
-        // журнала (свежая мигрированная БД, audit_log был пуст).
-        AuditChainVerifier.Result ok = verifier.verify(rows, null);
+        AuditChainVerifier.Result ok = verifier.verify(rows, anchor);
         assertThat(ok.verified())
                 .as("нетронутая цепочка верифицируется (precision-drift не воспроизводится)")
                 .isTrue();
@@ -85,8 +94,8 @@ final class HashChainRoundtripIT extends PostgresIT {
         }
 
         List<ChainRow> rows2 =
-                jdbi.withExtension(AuditLogDao.class, d -> d.findChainRange(min, max));
-        AuditChainVerifier.Result broken = verifier.verify(rows2, null);
+                jdbi.withExtension(AuditLogDao.class, d -> d.findChainRange(before + 1, max));
+        AuditChainVerifier.Result broken = verifier.verify(rows2, anchor);
 
         assertThat(broken.verified()).isFalse();
         assertThat(broken.firstBrokenAt()).isEqualTo(tamperId);

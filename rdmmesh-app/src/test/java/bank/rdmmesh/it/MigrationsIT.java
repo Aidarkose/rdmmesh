@@ -21,9 +21,14 @@ import org.junit.jupiter.api.Test;
 final class MigrationsIT extends PostgresIT {
 
     @Test
-    void allMigrationsApplyToV073() {
-        assertThat(migrateResult().targetSchemaVersion).isEqualTo("073");
-        assertThat(migrateResult().migrationsExecuted).isEqualTo(17);
+    void allMigrationsApplyToLatest() {
+        // Не пинуем конкретную версию (brittle — каждый round добавляет
+        // миграции; на R10 уже V074). Инвариант: миграции применились и
+        // target ≥ V073 (RANGE-партиционирование audit_log — база схемы).
+        assertThat(migrateResult().success).isTrue();
+        assertThat(Integer.parseInt(migrateResult().targetSchemaVersion))
+                .isGreaterThanOrEqualTo(73);
+        assertThat(migrateResult().migrationsExecuted).isGreaterThanOrEqualTo(17);
     }
 
     @Test
