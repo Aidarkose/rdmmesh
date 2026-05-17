@@ -11,12 +11,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.statement.UnableToExecuteStatementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import bank.rdmmesh.api.port.CatalogReadPort;
 import bank.rdmmesh.api.port.CatalogReadPort.CodeSetSchemaSnapshot;
@@ -32,6 +33,7 @@ import bank.rdmmesh.authoring.internal.dao.CodeSetVersionDao;
 import bank.rdmmesh.authoring.internal.dao.CodeSetVersionDao.VersionRow;
 import bank.rdmmesh.authoring.internal.diff.DiffCalculator;
 import bank.rdmmesh.authoring.internal.validation.AttributesValidator;
+import bank.rdmmesh.authoring.internal.xlsx.XlsxBulkParser;
 import bank.rdmmesh.authoring.resource.CodeItemDto;
 import bank.rdmmesh.spec.entity.CodeSetVersion;
 
@@ -66,6 +68,7 @@ public final class AuthoringService {
     private final AttributesValidator validator;
     private final DiffCalculator differ;
     private final CsvBulkParser csv;
+    private final XlsxBulkParser xlsx;
 
     public AuthoringService(Jdbi jdbi, CatalogReadPort catalog, ObjectMapper json) {
         this.jdbi = jdbi;
@@ -74,13 +77,13 @@ public final class AuthoringService {
         this.validator = new AttributesValidator(json);
         this.differ = new DiffCalculator(json);
         this.csv = new CsvBulkParser(json);
+        this.xlsx = new XlsxBulkParser(json);
     }
 
     // ── Versions ────────────────────────────────────────────────────────────────
 
     public List<CodeSetVersion> listVersions(UUID codesetId) {
-        return jdbi.withExtension(CodeSetVersionDao.class, dao -> dao.findByCodeset(codesetId)
-                .stream()
+        return jdbi.withExtension(CodeSetVersionDao.class, dao -> dao.findByCodeset(codesetId).stream()
                 .map(AuthoringMappers::toVersion)
                 .toList());
     }
@@ -100,11 +103,7 @@ public final class AuthoringService {
      * триггерами {@code code_item_closure_*} (миграция V022) — incremental update.
      */
     public CodeSetVersion createDraft(
-            UUID codesetId,
-            String requestedVersion,
-            String bump,
-            String releaseChannel,
-            UUID createdBy) {
+            UUID codesetId, String requestedVersion, String bump, String releaseChannel, UUID createdBy) {
 
         CodeSetSnapshot codeSet = catalog.findCodeSet(codesetId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown codeset: " + codesetId));
@@ -122,10 +121,9 @@ public final class AuthoringService {
             List<VersionRow> open = versionDao.findOpenVersions(codesetId);
             if (!open.isEmpty()) {
                 VersionRow blocking = open.get(0);
-                throw new IllegalArgumentException(
-                        "CodeSet " + codesetId + " уже имеет открытую версию "
-                                + blocking.version() + " (" + blocking.status() + ")."
-                                + " Завершите её цикл (publish/deprecate/reject) перед созданием новой.");
+                throw new IllegalArgumentException("CodeSet " + codesetId + " уже имеет открытую версию "
+                        + blocking.version() + " (" + blocking.status() + ")."
+                        + " Завершите её цикл (publish/deprecate/reject) перед созданием новой.");
             }
 
             Optional<VersionRow> base = versionDao.findLatestPublished(codesetId);
@@ -141,18 +139,12 @@ public final class AuthoringService {
 
             // Запрещаем DRAFT поверх существующей версии с тем же semver.
             if (versionDao.findByCodesetAndVersion(codesetId, version).isPresent()) {
-                throw new IllegalArgumentException(
-                        "Version " + version + " already exists for codeset " + codesetId);
+                throw new IllegalArgumentException("Version " + version + " already exists for codeset " + codesetId);
             }
 
             UUID newId = UUID.randomUUID();
             int n = versionDao.insertDraft(
-                    newId,
-                    codesetId,
-                    version,
-                    codeSet.schemaVersion(),
-                    releaseChannel,
-                    createdBy);
+                    newId, codesetId, version, codeSet.schemaVersion(), releaseChannel, createdBy);
             if (n != 1) throw new IllegalStateException("INSERT code_set_version returned " + n);
 
             int copied = base.map(b -> cloneItems(handle, b.id(), newId)).orElse(0);
@@ -160,9 +152,12 @@ public final class AuthoringService {
             // code_item уже подцепил свою цепочку; rebuild не нужен.
             versionDao.setItemCount(newId, copied);
 
-            log.info("authoring: создан draft codeset_id={} version={} from={} items={}",
-                    codesetId, version,
-                    base.map(VersionRow::version).orElse("<empty>"), copied);
+            log.info(
+                    "authoring: создан draft codeset_id={} version={} from={} items={}",
+                    codesetId,
+                    version,
+                    base.map(VersionRow::version).orElse("<empty>"),
+                    copied);
             return AuthoringMappers.toVersion(versionDao.findById(newId).orElseThrow());
         });
     }
@@ -188,15 +183,21 @@ public final class AuthoringService {
      */
     public ClosureRebuildResult rebuildClosure(UUID versionId, UUID admin) {
         return jdbi.inTransaction(handle -> {
-            VersionRow version = handle.attach(CodeSetVersionDao.class).findById(versionId)
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Version not found: " + versionId));
+            VersionRow version = handle.attach(CodeSetVersionDao.class)
+                    .findById(versionId)
+                    .orElseThrow(() -> new IllegalArgumentException("Version not found: " + versionId));
             CodeItemClosureDao dao = handle.attach(CodeItemClosureDao.class);
             int removed = dao.deleteAllForVersion(versionId);
             int inserted = dao.rebuild(versionId);
             int total = dao.countForVersion(versionId);
-            log.warn("authoring: closure rebuild version_id={} (status={}) removed={} inserted={} total={} by_admin={}",
-                    versionId, version.status(), removed, inserted, total, admin);
+            log.warn(
+                    "authoring: closure rebuild version_id={} (status={}) removed={} inserted={} total={} by_admin={}",
+                    versionId,
+                    version.status(),
+                    removed,
+                    inserted,
+                    total,
+                    admin);
             return new ClosureRebuildResult(versionId, removed, inserted, total);
         });
     }
@@ -274,33 +275,26 @@ public final class AuthoringService {
             CodeItemDao dao = handle.attach(CodeItemDao.class);
             ItemRow current = dao.findById(itemId)
                     .filter(r -> r.versionId().equals(versionId))
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Item not found: " + itemId + " in version " + versionId));
+                    .orElseThrow(() ->
+                            new IllegalArgumentException("Item not found: " + itemId + " in version " + versionId));
 
             int n = dao.updateInDraft(
                     itemId,
                     patch.expectedRowVersion(),
-                    patch.parentKey() == null
-                            ? current.parentKeyJson()
-                            : jsonOfNullable(patch.parentKey()),
-                    patch.parentRef() == null
-                            ? current.parentRefJson()
-                            : jsonOfNullable(patch.parentRef()),
-                    patch.labelRu()        != null ? patch.labelRu()        : current.labelRu(),
-                    patch.labelEn()        != null ? patch.labelEn()        : current.labelEn(),
-                    patch.descriptionRu()  != null ? patch.descriptionRu()  : current.descriptionRu(),
-                    patch.descriptionEn()  != null ? patch.descriptionEn()  : current.descriptionEn(),
-                    patch.attributes() == null
-                            ? current.attributesJson()
-                            : jsonOfNullable(patch.attributes()),
+                    patch.parentKey() == null ? current.parentKeyJson() : jsonOfNullable(patch.parentKey()),
+                    patch.parentRef() == null ? current.parentRefJson() : jsonOfNullable(patch.parentRef()),
+                    patch.labelRu() != null ? patch.labelRu() : current.labelRu(),
+                    patch.labelEn() != null ? patch.labelEn() : current.labelEn(),
+                    patch.descriptionRu() != null ? patch.descriptionRu() : current.descriptionRu(),
+                    patch.descriptionEn() != null ? patch.descriptionEn() : current.descriptionEn(),
+                    patch.attributes() == null ? current.attributesJson() : jsonOfNullable(patch.attributes()),
                     patch.orderIndex(),
                     patch.status(),
                     patch.effectiveFrom() != null ? patch.effectiveFrom() : current.effectiveFrom(),
-                    patch.effectiveTo()   != null ? patch.effectiveTo()   : current.effectiveTo());
+                    patch.effectiveTo() != null ? patch.effectiveTo() : current.effectiveTo());
             if (n == 0) {
-                throw new OptimisticLockException(
-                        "Stale row_version for item " + itemId + ": expected "
-                                + patch.expectedRowVersion() + " (current " + current.rowVersion() + ")");
+                throw new OptimisticLockException("Stale row_version for item " + itemId + ": expected "
+                        + patch.expectedRowVersion() + " (current " + current.rowVersion() + ")");
             }
             // Closure обновляется AFTER-UPDATE-OF-parent_key триггером (V022).
             // На UPDATE без изменения parent_key триггер — no-op (см. V022).
@@ -340,8 +334,8 @@ public final class AuthoringService {
                 errors.add(new BulkError(i, null, "key_parts", "key_parts is required"));
                 continue;
             }
-            List<String> errs = validator.validate(
-                    ctx.codesetId(), ctx.schemaVersion(), ctx.schemaText(), r.attributes());
+            List<String> errs =
+                    validator.validate(ctx.codesetId(), ctx.schemaVersion(), ctx.schemaText(), r.attributes());
             for (String e : errs) errors.add(new BulkError(i, r.keyParts(), "attributes", e));
         }
         if (!errors.isEmpty()) {
@@ -359,16 +353,17 @@ public final class AuthoringService {
                             cur.rowVersion(),
                             r.parentKey() == null ? cur.parentKeyJson() : jsonOfNullable(r.parentKey()),
                             r.parentRef() == null ? cur.parentRefJson() : jsonOfNullable(r.parentRef()),
-                            r.labelRu()        != null ? r.labelRu()        : cur.labelRu(),
-                            r.labelEn()        != null ? r.labelEn()        : cur.labelEn(),
-                            r.descriptionRu()  != null ? r.descriptionRu()  : cur.descriptionRu(),
-                            r.descriptionEn()  != null ? r.descriptionEn()  : cur.descriptionEn(),
+                            r.labelRu() != null ? r.labelRu() : cur.labelRu(),
+                            r.labelEn() != null ? r.labelEn() : cur.labelEn(),
+                            r.descriptionRu() != null ? r.descriptionRu() : cur.descriptionRu(),
+                            r.descriptionEn() != null ? r.descriptionEn() : cur.descriptionEn(),
                             r.attributes() == null ? cur.attributesJson() : jsonOfNullable(r.attributes()),
                             r.orderIndex(),
                             r.status(),
                             r.effectiveFrom() != null ? r.effectiveFrom() : cur.effectiveFrom(),
-                            r.effectiveTo()   != null ? r.effectiveTo()   : cur.effectiveTo());
-                    if (n == 1) updated++; else unchanged++;
+                            r.effectiveTo() != null ? r.effectiveTo() : cur.effectiveTo());
+                    if (n == 1) updated++;
+                    else unchanged++;
                 } else {
                     dao.insert(
                             UUID.randomUUID(),
@@ -391,8 +386,13 @@ public final class AuthoringService {
             // Closure обновляется построчно AFTER-триггерами (V022).
             int count = dao.countByVersion(versionId);
             handle.attach(CodeSetVersionDao.class).setItemCount(versionId, count);
-            log.info("authoring: bulk upsert version_id={} added={} updated={} unchanged={} by={}",
-                    versionId, added, updated, unchanged, author);
+            log.info(
+                    "authoring: bulk upsert version_id={} added={} updated={} unchanged={} by={}",
+                    versionId,
+                    added,
+                    updated,
+                    unchanged,
+                    author);
             return BulkResult.applied(rows.size(), added, updated, unchanged);
         });
     }
@@ -426,17 +426,51 @@ public final class AuthoringService {
         return bulkUpsertJson(versionId, mapped, author);
     }
 
+    /**
+     * Bulk-import из XLSX (новая фича: импорт справочников из Excel). Контракт колонок
+     * идентичен {@link #bulkUpsertCsv} — парсер делегирует в тот же row-builder. Вся
+     * пачка атомарна: любая ошибка парсинга → REJECTED, ничего не записано.
+     */
+    public BulkResult bulkUpsertXlsx(UUID versionId, InputStream xlsxIn, UUID author) {
+        List<CsvBulkParser.Row> raw;
+        try {
+            raw = xlsx.parse(xlsxIn);
+        } catch (IOException | RuntimeException e) {
+            // RuntimeException ловит IllegalArgumentException парсера и любые
+            // ошибки fastexcel-reader на битой/не-XLSX книге.
+            String msg = e.getMessage() == null ? e.toString() : e.getMessage();
+            return BulkResult.rejected(0, List.of(new BulkError(-1, null, "xlsx", msg)));
+        }
+        List<NewItem> mapped = new ArrayList<>(raw.size());
+        for (CsvBulkParser.Row r : raw) {
+            mapped.add(new NewItem(
+                    r.keyParts(),
+                    r.parentKey(),
+                    null /* parent_ref не задаётся через XLSX в MVP */,
+                    r.labelRu(),
+                    r.labelEn(),
+                    r.descriptionRu(),
+                    r.descriptionEn(),
+                    r.attributes(),
+                    r.orderIndex(),
+                    r.status(),
+                    r.effectiveFrom(),
+                    r.effectiveTo()));
+        }
+        return bulkUpsertJson(versionId, mapped, author);
+    }
+
     // ── Diff ────────────────────────────────────────────────────────────────────
 
     public DiffCalculator.Result diff(UUID toVersionId, UUID fromVersionId) {
         return jdbi.withHandle(handle -> {
             CodeSetVersionDao versionDao = handle.attach(CodeSetVersionDao.class);
-            VersionRow to = versionDao.findById(toVersionId)
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Unknown to-version: " + toVersionId));
-            VersionRow from = versionDao.findById(fromVersionId)
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Unknown from-version: " + fromVersionId));
+            VersionRow to = versionDao
+                    .findById(toVersionId)
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown to-version: " + toVersionId));
+            VersionRow from = versionDao
+                    .findById(fromVersionId)
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown from-version: " + fromVersionId));
             if (!to.codesetId().equals(from.codesetId())) {
                 throw new IllegalArgumentException(
                         "Cannot diff across codesets: " + to.codesetId() + " vs " + from.codesetId());
@@ -456,16 +490,14 @@ public final class AuthoringService {
                     "Version " + versionId + " is " + row.status() + ", only DRAFT is editable");
         }
         CodeSetSchemaSnapshot schema = catalog.schemaByVersion(row.codesetId(), row.schemaVersion())
-                .orElseThrow(() -> new IllegalStateException(
-                        "Missing CodeSetSchema codeset_id=" + row.codesetId()
-                                + " schema_version=" + row.schemaVersion()));
+                .orElseThrow(() -> new IllegalStateException("Missing CodeSetSchema codeset_id=" + row.codesetId()
+                        + " schema_version=" + row.schemaVersion()));
         return new VersionContext(row.codesetId(), row.schemaVersion(), schema.jsonSchemaText());
     }
 
     private void validateOrThrow(VersionContext ctx, Map<String, Object> attributes, String forKey) {
         if (attributes == null) return;
-        List<String> errs = validator.validate(
-                ctx.codesetId(), ctx.schemaVersion(), ctx.schemaText(), attributes);
+        List<String> errs = validator.validate(ctx.codesetId(), ctx.schemaVersion(), ctx.schemaText(), attributes);
         if (!errs.isEmpty()) {
             throw new ValidationException(
                     "attributes do not match CodeSetSchema (" + forKey + "): " + String.join("; ", errs));
@@ -475,7 +507,7 @@ public final class AuthoringService {
     private int cloneItems(Handle handle, UUID fromVersionId, UUID toVersionId) {
         // Atomic SELECT-INSERT: новые id, new system_from, row_version=0; всё остальное — копия.
         return handle.createUpdate(
-                """
+                        """
                 INSERT INTO authoring.code_item
                     (id, version_id, key_parts, parent_key, parent_ref,
                      label_ru, label_en, description_ru, description_en,
@@ -547,11 +579,11 @@ public final class AuthoringService {
     public record ItemsPage(int page, int size, int total, List<CodeItemDto> items) {}
 
     public record BulkResult(
-            String status, int rowsTotal, int rowsAdded, int rowsUpdated,
-            int rowsUnchanged, List<BulkError> errors) {
+            String status, int rowsTotal, int rowsAdded, int rowsUpdated, int rowsUnchanged, List<BulkError> errors) {
         public static BulkResult applied(int total, int added, int updated, int unchanged) {
             return new BulkResult("APPLIED", total, added, updated, unchanged, List.of());
         }
+
         public static BulkResult rejected(int total, List<BulkError> errors) {
             return new BulkResult("REJECTED", total, 0, 0, 0, Collections.unmodifiableList(errors));
         }
@@ -566,12 +598,16 @@ public final class AuthoringService {
 
     /** Конфликт optimistic-lock'а — service бросает, resource ловит и отдаёт 409. */
     public static final class OptimisticLockException extends RuntimeException {
-        public OptimisticLockException(String message) { super(message); }
+        public OptimisticLockException(String message) {
+            super(message);
+        }
     }
 
     /** Не прошла валидация attributes — resource отдаёт 422. */
     public static final class ValidationException extends RuntimeException {
-        public ValidationException(String message) { super(message); }
+        public ValidationException(String message) {
+            super(message);
+        }
     }
 
     private Map<String, Object> safeAttributes(Map<String, Object> attrs) {

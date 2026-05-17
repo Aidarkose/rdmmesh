@@ -13,7 +13,11 @@ import {
   type TableColumnsType,
   type UploadFile,
 } from "antd";
-import { ImportOutlined, InboxOutlined } from "@ant-design/icons";
+import {
+  FileExcelOutlined,
+  ImportOutlined,
+  InboxOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -88,15 +92,17 @@ function BulkImportModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { message } = AntApp.useApp();
-  const [tab, setTab] = useState<"json" | "csv">("json");
+  const [tab, setTab] = useState<"json" | "csv" | "xlsx">("json");
   const [jsonText, setJsonText] = useState("");
   const [csvText, setCsvText] = useState("");
+  const [xlsxFile, setXlsxFile] = useState<File | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkImportResult | null>(null);
 
   const reset = () => {
     setJsonText("");
     setCsvText("");
+    setXlsxFile(null);
     setParseError(null);
     setResult(null);
     setTab("json");
@@ -157,6 +163,12 @@ function BulkImportModal({
     onError,
   });
 
+  const importXlsx = useMutation({
+    mutationFn: (file: File) => apiMutations.bulkXlsx(versionId, file),
+    onSuccess,
+    onError,
+  });
+
   const submit = () => {
     setParseError(null);
     setResult(null);
@@ -166,18 +178,29 @@ function BulkImportModal({
         return;
       }
       importJson.mutate(jsonText);
-    } else {
+    } else if (tab === "csv") {
       if (!csvText.trim()) {
         setParseError(t("bulk.empty"));
         return;
       }
       importCsv.mutate(csvText);
+    } else {
+      if (!xlsxFile) {
+        setParseError(t("bulk.xlsxNoFile"));
+        return;
+      }
+      importXlsx.mutate(xlsxFile);
     }
   };
 
   const onFileSelected = (file: UploadFile<unknown>): boolean => {
     const obj = file.originFileObj ?? (file as unknown as File);
     if (!(obj instanceof Blob)) return false;
+    if (tab === "xlsx") {
+      // XLSX — бинарь, не читаем text(): отправляем File как есть.
+      setXlsxFile(obj as File);
+      return false;
+    }
     void obj.text().then((text) => {
       if (tab === "json") setJsonText(text);
       else setCsvText(text);
@@ -185,7 +208,8 @@ function BulkImportModal({
     return false; // НЕ вызывать default upload — мы только читаем содержимое.
   };
 
-  const isPending = importJson.isPending || importCsv.isPending;
+  const isPending =
+    importJson.isPending || importCsv.isPending || importXlsx.isPending;
 
   return (
     <Modal
@@ -201,7 +225,7 @@ function BulkImportModal({
     >
       <Tabs
         activeKey={tab}
-        onChange={(k) => setTab(k as "json" | "csv")}
+        onChange={(k) => setTab(k as "json" | "csv" | "xlsx")}
         items={[
           {
             key: "json",
@@ -276,6 +300,34 @@ function BulkImportModal({
                     border: "1px solid #d9d9d9",
                   }}
                 />
+              </Space>
+            ),
+          },
+          {
+            key: "xlsx",
+            label: "Excel (XLSX)",
+            children: (
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                  {t("bulk.xlsxHint")}
+                </Typography.Paragraph>
+                <Upload.Dragger
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  multiple={false}
+                  showUploadList={false}
+                  beforeUpload={(file) => onFileSelected(file as unknown as UploadFile<unknown>)}
+                  style={{ padding: 12 }}
+                >
+                  <p style={{ margin: 0 }}>
+                    <FileExcelOutlined style={{ fontSize: 24 }} />
+                    <span style={{ marginLeft: 8 }}>{t("bulk.dropXlsx")}</span>
+                  </p>
+                </Upload.Dragger>
+                {xlsxFile && (
+                  <Typography.Text type="success">
+                    {t("bulk.xlsxSelected", { name: xlsxFile.name })}
+                  </Typography.Text>
+                )}
               </Space>
             ),
           },

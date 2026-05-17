@@ -13,9 +13,15 @@ import {
   Table,
   Tag,
   Typography,
+  App as AntApp,
   type TableColumnsType,
 } from "antd";
-import { EyeOutlined, SearchOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  EyeOutlined,
+  FileExcelOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
@@ -75,7 +81,9 @@ export function ConsumerViewButton({ domainName, codesetName, currentVersion }: 
 
 function ConsumerViewPanel({ domainName, codesetName, currentVersion }: Props) {
   const { t } = useTranslation();
+  const { message } = AntApp.useApp();
   const [form] = Form.useForm<FormValues>();
+  const [exporting, setExporting] = useState<"xlsx" | "csv" | "json" | null>(null);
   // По умолчанию: «published», без bitemporal-фильтров, lang=ru.
   const [filters, setFilters] = useState<ResolvedFilters>({
     version: currentVersion ?? null,
@@ -121,6 +129,23 @@ function ConsumerViewPanel({ domainName, codesetName, currentVersion }: Props) {
       knowledgeAsOf: null,
       lang: "ru",
     });
+  };
+
+  const doExport = (format: "xlsx" | "csv" | "json") => {
+    setExporting(format);
+    api
+      .downloadDistributionExport(domainName, codesetName, format, {
+        version: filters.version,
+        asOf: filters.asOf,
+        knowledgeAsOf: filters.knowledgeAsOf,
+        lang: filters.lang,
+      })
+      .catch((e: unknown) => {
+        const msg =
+          e instanceof ApiError ? `${e.status}: ${e.message}` : String(e);
+        message.error(`${t("consumer.exportError")} — ${msg}`);
+      })
+      .finally(() => setExporting(null));
   };
 
   const attrKeys = (() => {
@@ -276,6 +301,35 @@ function ConsumerViewPanel({ domainName, codesetName, currentVersion }: Props) {
           )}
         </Form>
       </Card>
+
+      <Space style={{ marginBottom: 16 }} align="center" wrap>
+        <Typography.Text type="secondary">{t("consumer.export")}:</Typography.Text>
+        <Button
+          icon={<FileExcelOutlined />}
+          loading={exporting === "xlsx"}
+          disabled={exporting !== null && exporting !== "xlsx"}
+          onClick={() => doExport("xlsx")}
+        >
+          XLSX
+        </Button>
+        <Button
+          icon={<DownloadOutlined />}
+          loading={exporting === "csv"}
+          disabled={exporting !== null && exporting !== "csv"}
+          onClick={() => doExport("csv")}
+        >
+          CSV
+        </Button>
+        <Button
+          icon={<DownloadOutlined />}
+          loading={exporting === "json"}
+          disabled={exporting !== null && exporting !== "json"}
+          onClick={() => doExport("json")}
+        >
+          JSON
+        </Button>
+        <Typography.Text type="secondary">{t("consumer.exportHint")}</Typography.Text>
+      </Space>
 
       {errorMessage && (
         <Alert type="error" message={errorMessage} showIcon style={{ marginBottom: 16 }} />

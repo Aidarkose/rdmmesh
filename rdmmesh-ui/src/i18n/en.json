@@ -158,7 +158,10 @@
     "label": "Label",
     "totalItems": "Total items",
     "versionResolved": "Resolved to",
-    "bitemporalActive": "Bitemporal filters active: as_of={{asOf}}, knowledge_as_of={{knowledgeAsOf}}"
+    "bitemporalActive": "Bitemporal filters active: as_of={{asOf}}, knowledge_as_of={{knowledgeAsOf}}",
+    "export": "Export",
+    "exportHint": "Download the resolved version in the chosen format",
+    "exportError": "Failed to download export"
   },
   "bulk": {
     "button": "Bulk import",
@@ -173,6 +176,10 @@
     "csvHint": "CSV with header row. Columns: key_parts, label_ru, label_en, attributes (as JSON string), order_index, status, effective_from, effective_to.",
     "dropJson": "Drop a .json file here or click to select",
     "dropCsv": "Drop a .csv file here or click to select",
+    "dropXlsx": "Drop an .xlsx file here or click to select",
+    "xlsxHint": "Excel workbook (.xlsx). First sheet, first row is the header. Same columns as CSV: key_parts, label_ru, label_en, attributes (as JSON string), order_index, status, effective_from, effective_to.",
+    "xlsxSelected": "Selected file: {{name}}",
+    "xlsxNoFile": "Choose an .xlsx file",
     "orPaste": "Or paste payload below:"
   },
   "diff": {
