@@ -171,6 +171,26 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!-- E14 round 9: активируем failsafe. *IT.java гоняются на фазе
+                 integration-test/verify (Testcontainers Postgres). Пропуск —
+                 штатный флаг failsafe `-DskipITs` (CI validate-job его ставит;
+                 push в main/release гоняет полностью). До round 9 плагин жил
+                 только в parent pluginManagement и не был активирован — IT
+                 не запускались вовсе (мягкий долг E1 §3.7). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>integration-tests</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
