@@ -61,9 +61,14 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: mvn verify (skip integration-tests on first iteration)
-        # IT'ы появятся в эпиках E2+ через testcontainers; пока verify ≈ unit + ArchUnit.
-        run: mvn $MAVEN_CLI_OPTS -DskipITs verify
+      - name: mvn verify (unit + ArchUnit + Testcontainers IT)
+        # E14 round 14 — CI-gating: push-job гоняет IT по-настоящему.
+        # ubuntu-latest имеет нативный dockerd, Maven здесь на host-JVM
+        # (setup-java) → Testcontainers подключается к демону напрямую
+        # (НЕ dockerized-bin/mvn, НЕ Docker-Desktop-прокси — ограничение
+        # E14.9 §2 тут не действует; IT реально исполняются и гейтят merge).
+        # validate-job (PR) тестов не гоняет вовсе — быстрый smoke.
+        run: mvn $MAVEN_CLI_OPTS verify
 
       - name: Upload surefire reports on failure
         if: failure()
