@@ -95,21 +95,40 @@ public final class StateMachine {
     }
 
     /**
-     * Полная валидация одного перехода: маппинг action, role gate, self-approval prevention,
-     * обязательность comment'а. Возвращает {@link Decision} с эффектами для side-DB-операций.
+     * Полная валидация перехода по <b>дефолтному</b> 4-eyes-графу
+     * (back-compat: поведение E5 1:1). Делегирует в
+     * {@link #validate(Request, WorkflowGraph)} с
+     * {@link WorkflowGraph#defaultFourEyes()}.
      */
     public static Decision validate(Request req) {
-        Action action = resolveAction(req.from(), req.to());
+        return validate(req, WorkflowGraph.defaultFourEyes());
+    }
 
-        if (action == Action.steward_reject || action == Action.owner_reject) {
+    /**
+     * Валидация перехода по ПРОИЗВОЛЬНОМУ графу (V2 / BR-18, ADR-0010 B):
+     * легальность ребра, role-gate и self-approval prevention по
+     * {@link WorkflowGraph.Kind}, обязательность comment'а на reject.
+     *
+     * <p>Граф ДОЛЖЕН быть предварительно пропущен через
+     * {@link WorkflowGraphInvariants} — иначе кастомный граф может не
+     * содержать STEWARD/OWNER-ступеней (ADR-0010: no-bypass для
+     * произвольных графов держится на инвариант-сети, не на коде здесь).
+     */
+    public static Decision validate(Request req, WorkflowGraph graph) {
+        WorkflowGraph.EdgeSpec spec = graph.edge(req.from(), req.to())
+                .orElseThrow(() -> new IllegalStateTransitionException(
+                        "Переход " + req.from() + " → " + req.to()
+                                + " не разрешён state machine'ой"));
+
+        if (spec.reject()) {
             if (req.comment() == null || req.comment().isBlank()) {
                 throw new IllegalStateTransitionException(
-                        "Reject требует обязательный comment (" + action + ")");
+                        "Reject требует обязательный comment (" + spec.action() + ")");
             }
         }
 
-        switch (action) {
-            case submit -> {
+        switch (spec.kind()) {
+            case SUBMIT -> {
                 // Submit делает Author. Проверка: либо актор — это создатель draft'а,
                 // либо у актора есть base RDM_AUTHOR/RDM_ADMIN.
                 if (!req.actor().equals(req.createdBy())
@@ -118,14 +137,14 @@ public final class StateMachine {
                             "submit разрешён только автору draft'а или RDM_AUTHOR/RDM_ADMIN");
                 }
             }
-            case steward_approve, steward_reject -> {
+            case STEWARD -> {
                 if (req.actor().equals(req.createdBy())) {
                     throw new SelfApprovalException(
                             "Self-approval запрещён: actor совпадает с created_by");
                 }
                 requireStewardRole(req);
             }
-            case owner_approve, owner_reject -> {
+            case OWNER -> {
                 if (req.actor().equals(req.createdBy())) {
                     throw new SelfApprovalException(
                             "Self-approval запрещён: actor совпадает с created_by");
@@ -136,20 +155,19 @@ public final class StateMachine {
                 }
                 requireOwnerRole(req);
             }
-            case publish, deprecate -> {
+            case SYSTEM -> {
                 // System actions, see class-level Javadoc. Никаких role/self-approval
                 // проверок — вызывает их PublishingService, не пользователь.
                 if (!hasAny(req.baseRoles(), "RDM_SYSTEM")) {
                     throw new InsufficientRoleException(
-                            "Действие " + action + " зарезервировано за PublishingService (RDM_SYSTEM)");
+                            "Действие " + spec.action()
+                                    + " зарезервировано за PublishingService (RDM_SYSTEM)");
                 }
             }
-            default -> throw new IllegalStateException("Unreachable action: " + action);
+            default -> throw new IllegalStateException("Unreachable kind: " + spec.kind());
         }
 
-        boolean recordReviewer = (action == Action.steward_approve);
-        boolean setApprover    = (action == Action.owner_approve);
-        return new Decision(action, recordReviewer, setApprover);
+        return new Decision(spec.action(), spec.recordReviewer(), spec.setApprover());
     }
 
     private static void requireStewardRole(Request req) {
