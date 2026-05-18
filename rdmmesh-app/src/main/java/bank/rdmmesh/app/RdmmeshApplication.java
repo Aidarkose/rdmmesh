@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import bank.rdmmesh.api.eventbus.EventBus;
+import bank.rdmmesh.api.eventbus.VersionDeletedDomainEvent;
 import bank.rdmmesh.api.port.ArchivePort;
 import bank.rdmmesh.api.port.CatalogMirrorPort;
 import bank.rdmmesh.api.port.CatalogReadPort;
@@ -156,6 +157,12 @@ public final class RdmmeshApplication extends Application<RdmmeshConfiguration> 
         // V2 / BR-18 round 2: REST per-domain BPMN-шаблонов — только при
         // engine=flowable (RDM_ADMIN; для enum-движка шаблоны бессмысленны).
         workflow.templates().ifPresent(environment.jersey()::register);
+        // V2 / BR-18 round 3: при engine=flowable гасим осиротевший
+        // Flowable-инстанс на удаление DRAFT-версии (event-driven,
+        // best-effort — SyncEventBus изолирует исключения подписчика).
+        workflow.engineManager().ifPresent(mgr ->
+                eventBus.subscribe(VersionDeletedDomainEvent.class,
+                        e -> mgr.cancelForVersion(e.versionId())));
 
         // E6 — Publishing. Подписка на WorkflowTransitionDomainEvent с to=OWNER_APPROVED:
         // PublishingService автоматически создаёт snapshot, считает SHA-256 + HMAC и

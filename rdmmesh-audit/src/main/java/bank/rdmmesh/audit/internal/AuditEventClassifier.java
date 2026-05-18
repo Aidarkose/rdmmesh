@@ -6,6 +6,7 @@ import bank.rdmmesh.api.eventbus.AuditVerifyDomainEvent;
 import bank.rdmmesh.api.eventbus.ClosureRebuildDomainEvent;
 import bank.rdmmesh.api.eventbus.DomainEvent;
 import bank.rdmmesh.api.eventbus.OwnershipChangedDomainEvent;
+import bank.rdmmesh.api.eventbus.VersionDeletedDomainEvent;
 import bank.rdmmesh.api.eventbus.VersionPublishedDomainEvent;
 import bank.rdmmesh.api.eventbus.WorkflowTransitionDomainEvent;
 import bank.rdmmesh.spec.events.OwnershipChangedEvent;
@@ -43,6 +44,10 @@ public final class AuditEventClassifier {
         if (event instanceof ClosureRebuildDomainEvent cr) {
             return new Classification(
                     "CLOSURE_REBUILD", "VERSION", cr.versionId(), cr.actor());
+        }
+        if (event instanceof VersionDeletedDomainEvent vd) {
+            return new Classification(
+                    "VERSION_DELETED", "VERSION", vd.versionId(), vd.actor());
         }
         return new Classification(
                 event.getClass().getSimpleName(), null, null, null);

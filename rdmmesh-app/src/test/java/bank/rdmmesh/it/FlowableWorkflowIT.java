@@ -164,6 +164,29 @@ final class FlowableWorkflowIT extends PostgresIT {
     }
 
     @Test
+    void orphanInstanceCancelledOnVersionDelete() throws SQLException {
+        UUID author = UUID.randomUUID();
+        UUID v = seedDraft(author, "orph").versionId();
+        Ctx ctx = buildCtx();
+        try {
+            ctx.engine().transition(v, "IN_REVIEW", author, Set.of("RDM_AUTHOR"), null);
+            assertThat(ctx.manager().runtimeService().createProcessInstanceQuery()
+                    .processInstanceBusinessKey(v.toString()).count())
+                    .as("инстанс поднят").isEqualTo(1);
+
+            // Эмуляция подписчика VersionDeletedDomainEvent (E16.3 cleanup).
+            ctx.manager().cancelForVersion(v);
+            assertThat(ctx.manager().runtimeService().createProcessInstanceQuery()
+                    .processInstanceBusinessKey(v.toString()).count())
+                    .as("осиротевший инстанс погашен").isZero();
+
+            ctx.manager().cancelForVersion(v); // идемпотентно — без исключений
+        } finally {
+            ctx.manager().stop();
+        }
+    }
+
+    @Test
     void perDomainTemplateDrivesTransitionsAndStaysNoBypass() throws SQLException {
         UUID admin = UUID.randomUUID();
         UUID author = UUID.randomUUID();

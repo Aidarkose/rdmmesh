@@ -115,6 +115,32 @@ public final class FlowableEngineManager implements Managed {
         return new DomainDeployment(d.getId(), c.processKey());
     }
 
+    /**
+     * E16.3 round-3 cleanup: гасит осиротевшие инстансы версии (businessKey
+     * = versionId) после удаления DRAFT'а. Идемпотентно (нет инстансов —
+     * no-op), best-effort: исключение логируется и НЕ пробрасывается —
+     * подписчик event-bus'а не должен влиять на удаление версии.
+     */
+    public void cancelForVersion(UUID versionId) {
+        String bk = versionId.toString();
+        try {
+            RuntimeService rt = engine.getRuntimeService();
+            var instances = rt.createProcessInstanceQuery()
+                    .processInstanceBusinessKey(bk)
+                    .list();
+            for (var pi : instances) {
+                rt.deleteProcessInstance(pi.getId(), "rdm: DRAFT version deleted");
+            }
+            if (!instances.isEmpty()) {
+                log.info("Flowable: cancelled {} orphan instance(s) for version={}",
+                        instances.size(), bk);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Flowable: cancelForVersion({}) failed (best-effort): {}",
+                    bk, e.toString());
+        }
+    }
+
     /** Есть ли в Flowable определение {@code processKey} для tenant=domainId. */
     public boolean hasTenantProcess(String processKey, UUID domainId) {
         return engine.getRepositoryService().createProcessDefinitionQuery()

@@ -28,7 +28,7 @@ public final class AuthoringModule {
 
     public static Resources build(
             Jdbi jdbi, CatalogReadPort catalog, ObjectMapper json, EventBus eventBus) {
-        AuthoringService service = new AuthoringService(jdbi, catalog, json);
+        AuthoringService service = new AuthoringService(jdbi, catalog, json, eventBus);
         return new Resources(
                 service,
                 new CodeSetVersionResource(service),

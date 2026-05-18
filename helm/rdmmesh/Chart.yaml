@@ -1,0 +1,13 @@
+apiVersion: v2
+name: rdmmesh
+description: >-
+  rdmmesh — Reference Data Management for Mesh (модульный монолит на стеке
+  OpenMetadata). Чарт деплоит JVM-сервис; внешние Postgres и Keycloak —
+  managed вне чарта (SPEC §3.1 lean: 3 внешних компонента).
+type: application
+# Версия чарта; appVersion трекает образ rdmmesh-service.
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/Aidarkose/rdmmesh
+maintainers:
+  - name: rdmmesh

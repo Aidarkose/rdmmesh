@@ -102,7 +102,8 @@ public final class CodeSetVersionResource {
     public Response delete(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId) {
-        boolean ok = authoring.deleteDraft(parseUuid(versionId, "versionId"));
+        boolean ok = authoring.deleteDraft(
+                parseUuid(versionId, "versionId"), principal.omUserId());
         if (!ok) {
             throw new WebApplicationException(
                     "Version not deletable (must be DRAFT)", Response.Status.CONFLICT);

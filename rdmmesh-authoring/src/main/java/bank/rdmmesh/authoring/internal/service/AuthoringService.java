@@ -3,6 +3,8 @@ package bank.rdmmesh.authoring.internal.service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -19,6 +21,8 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import bank.rdmmesh.api.eventbus.EventBus;
+import bank.rdmmesh.api.eventbus.VersionDeletedDomainEvent;
 import bank.rdmmesh.api.port.CatalogReadPort;
 import bank.rdmmesh.api.port.CatalogReadPort.CodeSetSchemaSnapshot;
 import bank.rdmmesh.api.port.CatalogReadPort.CodeSetSnapshot;
@@ -69,8 +73,14 @@ public final class AuthoringService {
     private final DiffCalculator differ;
     private final CsvBulkParser csv;
     private final XlsxBulkParser xlsx;
+    private final EventBus eventBus;
 
     public AuthoringService(Jdbi jdbi, CatalogReadPort catalog, ObjectMapper json) {
+        this(jdbi, catalog, json, null);
+    }
+
+    public AuthoringService(Jdbi jdbi, CatalogReadPort catalog, ObjectMapper json,
+                            EventBus eventBus) {
         this.jdbi = jdbi;
         this.catalog = catalog;
         this.json = json;
@@ -78,6 +88,7 @@ public final class AuthoringService {
         this.differ = new DiffCalculator(json);
         this.csv = new CsvBulkParser(json);
         this.xlsx = new XlsxBulkParser(json);
+        this.eventBus = eventBus;
     }
 
     // ── Versions ────────────────────────────────────────────────────────────────
@@ -162,12 +173,29 @@ public final class AuthoringService {
         });
     }
 
-    public boolean deleteDraft(UUID versionId) {
-        return jdbi.inTransaction(handle -> {
+    public boolean deleteDraft(UUID versionId, UUID actor) {
+        boolean deleted = jdbi.inTransaction(handle -> {
             // closure уйдёт через ON DELETE CASCADE (внешний ключ) с CodeSetVersion.
             int n = handle.attach(CodeSetVersionDao.class).deleteDraft(versionId);
             return n == 1;
         });
+        if (deleted && eventBus != null) {
+            // ПОСЛЕ commit'а: подписчик (Flowable cleanup осиротевшего
+            // инстанса при engine=flowable, E16.3) + audit. Best-effort —
+            // SyncEventBus изолирует исключения подписчиков (E5 §1.5),
+            // удаление версии не откатывается.
+            try {
+                eventBus.publish(new VersionDeletedDomainEvent(
+                        UUID.randomUUID(),
+                        OffsetDateTime.now(ZoneOffset.UTC),
+                        versionId,
+                        actor));
+            } catch (RuntimeException e) {
+                log.warn("authoring: VersionDeletedDomainEvent publish failed "
+                        + "(version_id={}): {}", versionId, e.toString());
+            }
+        }
+        return deleted;
     }
 
     /**
