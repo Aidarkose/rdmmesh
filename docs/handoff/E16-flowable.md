@@ -11,10 +11,10 @@
 > **Состояние.** Закрыт foundation-слайс BR-18: in-process Flowable за
 > тем же `WorkflowPort`, дефолтный 4-eyes как BPMN, guard'ы делегируются
 > в существующий `WorkflowService` (без рефакторинга бизнес-логики).
-> `./bin/mvn verify` → **BUILD SUCCESS**; surefire зелёный
-> (+`WorkflowModuleEngineSelectionTest` 2); ArchUnit `ModuleIsolationTest`
-> 11; failsafe обнаружил `FlowableWorkflowIT` (локально Skipped —
-> Docker-Desktop, E14.9 §2 — CI-авторитет).
+> **CI зелёный end-to-end** (commit `f2c8b08`): `FlowableWorkflowIT`
+> исполнился на ubuntu-dockerd — Tests run 1, **Skipped 0**; все 16 IT
+> 0 fail/0 skip, BUILD SUCCESS. Локально IT Skipped (Docker-Desktop,
+> E14.9 §2 — CI-авторитет); surefire/ArchUnit зелёные локально.
 
 ---
 
@@ -113,11 +113,14 @@ resource→engine intra-module (паттерн E4 §1.10); IT-импорт
 
 ## 4. Что осталось / следующий раунд
 
-1. **CI-прогон `FlowableWorkflowIT`** (после push): verify-job зелёный,
-   IT исполнился (1, не Skipped). Риск: Flowable+Postgres `databaseSchema`
-   нюанс — подстрахован `currentSchema` в URL **и** `setDatabaseSchema`;
-   если ACT_* уедут не в ту схему — ужесточить (явный search_path в
-   пуле). Авторитетно проверяется только на CI.
+1. ~~CI-прогон `FlowableWorkflowIT`~~ — **сделано** (`f2c8b08`,
+   Tests run 1, Skipped 0). Потребовался CI-fix (см. §4a): первый push
+   (`d7127b5`) упал — Flowable авто-активирует event-registry+IDM
+   sub-движки, их Liquibase-changelog дублируется в shaded uber-jar
+   → ProcessEngine не стартовал. Локально не воспроизводилось (IT
+   Skipped без Docker — ровно задокументированный риск). Postgres-
+   `databaseSchema` нюанс подтверждён рабочим (currentSchema в URL +
+   setDatabaseSchema — ACT_* в `workflow_engine`).
 2. **Per-domain BPMN (ядро BR-18)**: хранилище BPMN-определений per
    Domain + REST деплоя/версионирования + привязка к домену + выбор
    процесса по домену CodeSet'а. Тогда топология станет данными (сейчас
@@ -131,6 +134,24 @@ resource→engine intra-module (паттерн E4 §1.10); IT-импорт
    `RDM_WORKFLOW_ENGINE` + проверка `workflow_engine`-схемы в prod-Flyway).
 
 ---
+
+## 4a. CI-fix (commit f2c8b08) — НЕ откатывать
+
+Первый push (`d7127b5`) дал зелёный локальный `verify` (IT Skipped),
+но **красный CI**: `FlowableWorkflowIT` →
+`FlowableException: Error initialising eventregistry data model` →
+`liquibase … Found 2 files with the path
+flowable-eventregistry-db-changelog.xml`. Причина: `flowable-engine`
+транзитивно тянет event-registry + IDM sub-движки; они авто-активируются
+и гоняют свои Liquibase-changelog'и, а в shaded uber-jar этот changelog
+лежит по одному classpath-пути дважды (несколько flowable-jar'ов).
+
+**Фикс:** `((ProcessEngineConfigurationImpl) cfg).setDisableIdmEngine(true)`
++ `.setDisableEventRegistry(true)` — нужен только core BPMN, sub-движки
+не инициализируются (и их liquibase не парсится). Заодно lean (меньше
+FLW_*/ACT_*-таблиц). **Инвариант:** не включать обратно IDM/EventRegistry
+без решения проблемы дубликата changelog'а в shaded-jar (shade-relocation
+/ exclude), иначе движок снова не стартует в prod-деплое.
 
 ## 5. Версия
 
