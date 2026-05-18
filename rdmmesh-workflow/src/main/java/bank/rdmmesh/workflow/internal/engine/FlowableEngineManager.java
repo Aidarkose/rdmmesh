@@ -62,10 +62,19 @@ public final class FlowableEngineManager implements Managed {
                 .setDatabaseSchemaUpdate(ProcessEngineConfiguration.DB_SCHEMA_UPDATE_TRUE)
                 .setAsyncExecutorActivate(false)
                 .setHistory("none");
-        // Делегат как bean → BPMN ${rdmTransitionDelegate}. setBeans — на impl.
-        ((ProcessEngineConfigurationImpl) cfg).setBeans(
-                Map.of("rdmTransitionDelegate",
-                        new WorkflowTransitionDelegate(workflowService)));
+        ProcessEngineConfigurationImpl impl = (ProcessEngineConfigurationImpl) cfg;
+        // Делегат как bean → BPMN ${rdmTransitionDelegate}.
+        impl.setBeans(Map.of("rdmTransitionDelegate",
+                new WorkflowTransitionDelegate(workflowService)));
+        // Нужен ТОЛЬКО core BPMN. flowable-engine транзитивно тянет
+        // event-registry + IDM sub-движки; они авто-активируются и гоняют
+        // СВОИ Liquibase-changelog'и. В shaded uber-jar (CI/prod-деплой)
+        // changelog event-registry дублируется по одному classpath-пути
+        // (несколько flowable-jar'ов) → Liquibase «Found 2 files…» →
+        // движок не стартует. Нам эти sub-движки не нужны вовсе —
+        // выключаем: и фикс дубликата, и lean (меньше ACT_*/FLW_*-таблиц).
+        impl.setDisableIdmEngine(true);
+        impl.setDisableEventRegistry(true);
 
         this.engine = cfg.buildProcessEngine();
 
