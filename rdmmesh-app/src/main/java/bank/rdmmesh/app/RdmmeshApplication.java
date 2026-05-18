@@ -94,6 +94,20 @@ public final class RdmmeshApplication extends Application<RdmmeshConfiguration> 
         // memory-exhaustion (см. RequestSizeLimitFilter javadoc).
         environment.jersey().register(new bank.rdmmesh.app.security.RequestSizeLimitFilter());
 
+        // E14.15 (F3, закрывает E14.8 §3 #3): servlet-уровневый hard-cap —
+        // покрывает chunked-without-Content-Length, который JAX-RS-фильтр
+        // выше пропускает. Регистрируется на /* раньше Jersey; overflow на
+        // chunked-пути → RequestBodyTooLargeException → 413 через mapper.
+        environment.servlets()
+                .addFilter("requestBodyCap",
+                        new bank.rdmmesh.app.security.RequestBodyCapFilter())
+                .addMappingForUrlPatterns(
+                        java.util.EnumSet.of(jakarta.servlet.DispatcherType.REQUEST),
+                        /* isMatchAfter */ false,
+                        "/*");
+        environment.jersey().register(
+                new bank.rdmmesh.app.security.RequestBodyTooLargeExceptionMapper());
+
         IdentityPort identityPort = buildIdentityPort(jdbi, config);
         registerJwtAuth(environment, identityPort);
 
