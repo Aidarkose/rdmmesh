@@ -57,14 +57,21 @@ public final class CsvBulkParser {
             int rowIndex = 0;
             while (it.hasNext()) {
                 Map<String, String> raw = it.next();
-                out.add(toRow(raw, rowIndex));
+                out.add(buildRow(json, raw, rowIndex));
                 rowIndex++;
             }
         }
         return out;
     }
 
-    private Row toRow(Map<String, String> raw, int rowIndex) {
+    /**
+     * Преобразует «сырую» строку (header-имя колонки → строковое значение ячейки)
+     * в типизированный {@link Row}. Вынесено в {@code public static}, чтобы тот же
+     * контракт колонок/коэрции/ошибок переиспользовал XLSX-парсер (новая фича —
+     * импорт справочников из Excel), не дублируя логику разбора {@code key_parts},
+     * {@code attr.*} и дат.
+     */
+    public static Row buildRow(ObjectMapper json, Map<String, String> raw, int rowIndex) {
         String keyText = nullIfBlank(raw.get("key_parts"));
         if (keyText == null) {
             throw new IllegalArgumentException("Row " + rowIndex + ": column 'key_parts' is required");
@@ -98,8 +105,7 @@ public final class CsvBulkParser {
         String attrText = nullIfBlank(raw.get("attributes"));
         if (attrText != null) {
             try {
-                Map<String, Object> base = json.readValue(
-                        attrText, new TypeReference<Map<String, Object>>() {});
+                Map<String, Object> base = json.readValue(attrText, new TypeReference<Map<String, Object>>() {});
                 attributes.putAll(base);
             } catch (IOException e) {
                 throw new IllegalArgumentException(
@@ -127,7 +133,7 @@ public final class CsvBulkParser {
         }
 
         LocalDate effFrom = parseDate(raw.get("effective_from"), rowIndex, "effective_from");
-        LocalDate effTo   = parseDate(raw.get("effective_to"),   rowIndex, "effective_to");
+        LocalDate effTo = parseDate(raw.get("effective_to"), rowIndex, "effective_to");
 
         return new Row(
                 rowIndex,

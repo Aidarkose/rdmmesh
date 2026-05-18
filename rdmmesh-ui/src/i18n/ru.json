@@ -158,7 +158,10 @@
     "label": "Label",
     "totalItems": "Всего записей",
     "versionResolved": "Резолвлено в",
-    "bitemporalActive": "Активны bitemporal-фильтры: as_of={{asOf}}, knowledge_as_of={{knowledgeAsOf}}"
+    "bitemporalActive": "Активны bitemporal-фильтры: as_of={{asOf}}, knowledge_as_of={{knowledgeAsOf}}",
+    "export": "Экспорт",
+    "exportHint": "Скачать резолвленную версию в выбранном формате",
+    "exportError": "Не удалось скачать экспорт"
   },
   "bulk": {
     "button": "Bulk-импорт",
@@ -173,6 +176,10 @@
     "csvHint": "CSV с заголовком. Колонки: key_parts, label_ru, label_en, attributes (JSON-строкой), order_index, status, effective_from, effective_to.",
     "dropJson": "Перетащите .json файл сюда или кликните",
     "dropCsv": "Перетащите .csv файл сюда или кликните",
+    "dropXlsx": "Перетащите .xlsx файл сюда или кликните",
+    "xlsxHint": "Excel-книга (.xlsx). Первый лист, первая строка — заголовок. Колонки те же, что у CSV: key_parts, label_ru, label_en, attributes (JSON-строкой), order_index, status, effective_from, effective_to.",
+    "xlsxSelected": "Выбран файл: {{name}}",
+    "xlsxNoFile": "Выберите .xlsx файл",
     "orPaste": "Или вставьте данные ниже:"
   },
   "diff": {

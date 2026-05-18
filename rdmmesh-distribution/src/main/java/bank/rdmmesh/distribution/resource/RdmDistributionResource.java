@@ -9,6 +9,17 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;
@@ -20,17 +31,8 @@ import bank.rdmmesh.distribution.internal.service.DistributionService.ExportResu
 import bank.rdmmesh.distribution.internal.service.DistributionService.ItemDto;
 import bank.rdmmesh.distribution.internal.service.DistributionService.ItemsPage;
 import bank.rdmmesh.distribution.internal.service.DistributionService.Query;
+
 import io.dropwizard.auth.Auth;
-import jakarta.ws.rs.DefaultValue;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.StreamingOutput;
 
 /**
  * Consumer-facing REST для downstream-систем (Risk-engine, BI, ETL). SPEC §3.5:
@@ -87,8 +89,7 @@ public final class RdmDistributionResource {
         Query q = buildQuery(domain, codeset, version, asOf, knowledgeAsOf, lang, 1, 1);
         try {
             return service.lookup(q, keyToken)
-                    .orElseThrow(() -> new jakarta.ws.rs.NotFoundException(
-                            "item не найден: " + keyToken));
+                    .orElseThrow(() -> new jakarta.ws.rs.NotFoundException("item не найден: " + keyToken));
         } catch (DistributionService.NotFoundException e) {
             throw new jakarta.ws.rs.NotFoundException(e.getMessage());
         }
@@ -105,8 +106,7 @@ public final class RdmDistributionResource {
             @QueryParam("knowledge_as_of") String knowledgeAsOf,
             @QueryParam("lang") @DefaultValue("ru") String lang,
             @QueryParam("format") @DefaultValue("json") String format) {
-        Query q = buildQuery(domain, codeset, version, asOf, knowledgeAsOf, lang,
-                1, MAX_PAGE_SIZE);
+        Query q = buildQuery(domain, codeset, version, asOf, knowledgeAsOf, lang, 1, MAX_PAGE_SIZE);
         ExportResult result;
         try {
             result = service.fetchAllItems(q);
@@ -115,29 +115,32 @@ public final class RdmDistributionResource {
         }
         return switch (format.toLowerCase()) {
             case "json" -> Response.ok(result).build();
-            case "csv"  -> csvResponse(result);
-            case "parquet", "xlsx" -> throw new WebApplicationException(
-                    "формат '" + format + "' не реализован в MVP, используйте csv|json",
-                    Response.Status.NOT_IMPLEMENTED);
+            case "csv" -> csvResponse(result);
+            case "xlsx" -> xlsxResponse(result);
+            case "parquet" -> throw new WebApplicationException(
+                    "формат 'parquet' не реализован в MVP, используйте csv|json|xlsx", Response.Status.NOT_IMPLEMENTED);
             default -> throw new WebApplicationException(
-                    "неизвестный format: " + format + " (ожидается csv|json)",
-                    Response.Status.BAD_REQUEST);
+                    "неизвестный format: " + format + " (ожидается csv|json|xlsx)", Response.Status.BAD_REQUEST);
         };
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────
 
     private Query buildQuery(
-            String domain, String codeset, String version,
-            String asOf, String knowledgeAsOf, String lang,
-            int page, int size) {
+            String domain,
+            String codeset,
+            String version,
+            String asOf,
+            String knowledgeAsOf,
+            String lang,
+            int page,
+            int size) {
         if (page < 1) {
             throw new WebApplicationException("page должен быть >= 1", Response.Status.BAD_REQUEST);
         }
         if (size < 1 || size > MAX_PAGE_SIZE) {
             throw new WebApplicationException(
-                    "size должен быть в [1, " + MAX_PAGE_SIZE + "]",
-                    Response.Status.BAD_REQUEST);
+                    "size должен быть в [1, " + MAX_PAGE_SIZE + "]", Response.Status.BAD_REQUEST);
         }
         if (size == 0) size = DEFAULT_PAGE_SIZE;
         try {
@@ -148,6 +151,16 @@ public final class RdmDistributionResource {
         } catch (IllegalArgumentException e) {
             throw new WebApplicationException(e.getMessage(), Response.Status.BAD_REQUEST);
         }
+    }
+
+    private static Response xlsxResponse(ExportResult result) {
+        StreamingOutput stream =
+                (OutputStream out) -> bank.rdmmesh.distribution.internal.XlsxExporter.write(result.items(), out);
+        String filename = result.domain() + "_" + result.codeset() + "_v" + result.version() + ".xlsx";
+        return Response.ok(stream)
+                .type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .build();
     }
 
     private static Response csvResponse(ExportResult result) {

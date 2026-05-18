@@ -76,6 +76,33 @@ export const api = {
     );
   },
 
+  // E15 — distribution bulk-export (xlsx/csv/json). Тот же resolve версии,
+  // что у distributionItems (version/as_of/knowledge_as_of/lang). xlsx/csv
+  // приходят с Content-Disposition: attachment; json — телом без него
+  // (fallback-имя строим на клиенте). Качаем как blob через apiFetchRaw.
+  downloadDistributionExport: async (
+    domain: string,
+    codeset: string,
+    format: "xlsx" | "csv" | "json",
+    opts: DistributionQuery = {},
+  ): Promise<void> => {
+    const params = new URLSearchParams();
+    params.set("format", format);
+    if (opts.version) params.set("version", opts.version);
+    if (opts.asOf) params.set("as_of", opts.asOf);
+    if (opts.knowledgeAsOf) params.set("knowledge_as_of", opts.knowledgeAsOf);
+    if (opts.lang) params.set("lang", opts.lang);
+
+    const res = await apiFetchRaw(
+      `/rdm/${encodeURIComponent(domain)}/${encodeURIComponent(codeset)}/export?${params.toString()}`,
+    );
+    const blob = await res.blob();
+    const filename =
+      parseFilenameFromContentDisposition(res.headers.get("content-disposition")) ??
+      `${domain}_${codeset}-${nowStamp()}.${format}`;
+    triggerBlobDownload(blob, filename);
+  },
+
   // Subscriptions (E9, RDM_ADMIN)
   listSubscriptions: () => apiFetch<Subscription[]>("/subscriptions"),
   getSubscription: (id: string) => apiFetch<Subscription>(`/subscriptions/${id}`),
@@ -136,19 +163,25 @@ export const api = {
       res.headers.get("content-disposition"),
     ) ?? `audit-${nowStamp()}.${format}`;
 
-    const url = URL.createObjectURL(blob);
-    try {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } finally {
-      URL.revokeObjectURL(url);
-    }
+    triggerBlobDownload(blob, filename);
   },
 };
+
+// Сохранить blob как файл через synthetic <a download>. Используется
+// audit-export'ом и distribution-export'ом (E15).
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 // Парсер RFC 6266: `attachment; filename="audit-20260512-153045.csv"` →
 // `"audit-20260512-153045.csv"`. Игнорирует `filename*=UTF-8''...` — backend
@@ -239,6 +272,19 @@ export const apiMutations = {
       method: "POST",
       headers: { "Content-Type": "text/csv" },
       body: csv,
+    }),
+
+  // E15 — XLSX bulk import. Бинарный body (File/Blob), MIME ровно как
+  // @Consumes на backend'е. apiFetch не трогает Content-Type для не-string
+  // body, поэтому ставим явно.
+  bulkXlsx: (versionId: string, file: Blob) =>
+    apiFetch<BulkImportResult>(`/versions/${versionId}/items/bulk-xlsx`, {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+      body: file,
     }),
 
   // E11.2c — Subscriptions admin

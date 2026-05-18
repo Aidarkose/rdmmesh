@@ -1,72 +1,83 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>bank.rdmmesh</groupId>
-        <artifactId>rdmmesh-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
-    </parent>
+  <parent>
+    <groupId>bank.rdmmesh</groupId>
+    <artifactId>rdmmesh-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
 
-    <artifactId>rdmmesh-authoring</artifactId>
-    <name>rdmmesh — authoring (drafts, items, bulk import, validation)</name>
+  <artifactId>rdmmesh-authoring</artifactId>
+  <name>rdmmesh — authoring (drafts, items, bulk import, validation)</name>
 
-    <dependencies>
-        <dependency>
-            <groupId>bank.rdmmesh</groupId>
-            <artifactId>rdmmesh-api</artifactId>
-        </dependency>
+  <dependencies>
+    <dependency>
+      <groupId>bank.rdmmesh</groupId>
+      <artifactId>rdmmesh-api</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>io.dropwizard</groupId>
-            <artifactId>dropwizard-jersey</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>io.dropwizard</groupId>
+      <artifactId>dropwizard-jersey</artifactId>
+    </dependency>
 
-        <!-- Для @Auth и AuthFilter; реальный JwtAuthenticator живёт в rdmmesh-identity. -->
-        <dependency>
-            <groupId>io.dropwizard</groupId>
-            <artifactId>dropwizard-auth</artifactId>
-        </dependency>
+    <!-- Для @Auth и AuthFilter; реальный JwtAuthenticator живёт в rdmmesh-identity. -->
+    <dependency>
+      <groupId>io.dropwizard</groupId>
+      <artifactId>dropwizard-auth</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>org.jdbi</groupId>
-            <artifactId>jdbi3-core</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>org.jdbi</groupId>
+      <artifactId>jdbi3-core</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>org.jdbi</groupId>
-            <artifactId>jdbi3-sqlobject</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>org.jdbi</groupId>
+      <artifactId>jdbi3-sqlobject</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>org.jdbi</groupId>
-            <artifactId>jdbi3-postgres</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>org.jdbi</groupId>
+      <artifactId>jdbi3-postgres</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>org.jdbi</groupId>
-            <artifactId>jdbi3-jackson2</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>org.jdbi</groupId>
+      <artifactId>jdbi3-jackson2</artifactId>
+    </dependency>
 
-        <!-- JSON Schema validation of CodeItem.attributes against CodeSetSchema -->
-        <dependency>
-            <groupId>com.networknt</groupId>
-            <artifactId>json-schema-validator</artifactId>
-            <version>1.5.5</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.slf4j</groupId>
-                    <artifactId>slf4j-api</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
+    <!-- JSON Schema validation of CodeItem.attributes against CodeSetSchema -->
+    <dependency>
+      <groupId>com.networknt</groupId>
+      <artifactId>json-schema-validator</artifactId>
+      <version>1.5.5</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-api</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
 
-        <!-- CSV bulk import -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-csv</artifactId>
-        </dependency>
-    </dependencies>
+    <!-- CSV bulk import -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-csv</artifactId>
+    </dependency>
+
+    <!-- XLSX bulk import (fastexcel-reader, streaming) -->
+    <dependency>
+      <groupId>org.dhatim</groupId>
+      <artifactId>fastexcel-reader</artifactId>
+    </dependency>
+
+    <!-- fastexcel writer — только для тестов: собрать .xlsx-фикстуру в памяти -->
+    <dependency>
+      <groupId>org.dhatim</groupId>
+      <artifactId>fastexcel</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 </project>

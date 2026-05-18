@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -28,6 +27,8 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import bank.rdmmesh.api.security.RdmmeshPrincipal;
 import bank.rdmmesh.authoring.internal.KeyEncoding;
 import bank.rdmmesh.authoring.internal.service.AuthoringService;
@@ -37,6 +38,7 @@ import bank.rdmmesh.authoring.internal.service.AuthoringService.ItemsPage;
 import bank.rdmmesh.authoring.internal.service.AuthoringService.NewItem;
 import bank.rdmmesh.authoring.internal.service.AuthoringService.OptimisticLockException;
 import bank.rdmmesh.authoring.internal.service.AuthoringService.ValidationException;
+
 import io.dropwizard.auth.Auth;
 
 /**
@@ -49,6 +51,7 @@ import io.dropwizard.auth.Auth;
  *   <li>{@code DELETE /versions/{id}/items/{itemId}}</li>
  *   <li>{@code POST   /versions/{id}/items/bulk}     — JSON array</li>
  *   <li>{@code POST   /versions/{id}/items/bulk-csv} — text/csv body</li>
+ *   <li>{@code POST   /versions/{id}/items/bulk-xlsx} — xlsx body (новая фича)</li>
  * </ul>
  *
  * <p><b>Composite key encoding.</b> Path-сегмент {@code {key}} ожидает
@@ -102,9 +105,7 @@ public final class CodeItemResource {
     @GET
     @Path("/{key}")
     public CodeItemDto getByKey(
-            @Auth RdmmeshPrincipal principal,
-            @PathParam("versionId") String versionId,
-            @PathParam("key") String key) {
+            @Auth RdmmeshPrincipal principal, @PathParam("versionId") String versionId, @PathParam("key") String key) {
         UUID v = parseUuid(versionId, "versionId");
         List<String> parts;
         try {
@@ -112,8 +113,7 @@ public final class CodeItemResource {
         } catch (IllegalArgumentException e) {
             throw new WebApplicationException(e.getMessage(), Response.Status.BAD_REQUEST);
         }
-        return authoring.findItemByKey(v, parts)
-                .orElseThrow(() -> new NotFoundException("item with key " + parts));
+        return authoring.findItemByKey(v, parts).orElseThrow(() -> new NotFoundException("item with key " + parts));
     }
 
     @PATCH
@@ -176,7 +176,9 @@ public final class CodeItemResource {
         } catch (IllegalArgumentException e) {
             throw new WebApplicationException(e.getMessage(), Response.Status.BAD_REQUEST);
         }
-        return Response.status(res.status().equals("APPLIED") ? 200 : 422).entity(res).build();
+        return Response.status(res.status().equals("APPLIED") ? 200 : 422)
+                .entity(res)
+                .build();
     }
 
     @POST
@@ -184,9 +186,7 @@ public final class CodeItemResource {
     @Consumes("text/csv")
     @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
     public Response bulkCsv(
-            @Auth RdmmeshPrincipal principal,
-            @PathParam("versionId") String versionId,
-            InputStream body) {
+            @Auth RdmmeshPrincipal principal, @PathParam("versionId") String versionId, InputStream body) {
         UUID v = parseUuid(versionId, "versionId");
         BulkResult res;
         try {
@@ -194,7 +194,27 @@ public final class CodeItemResource {
         } catch (IllegalStateException e) {
             throw new WebApplicationException(e.getMessage(), Response.Status.CONFLICT);
         }
-        return Response.status(res.status().equals("APPLIED") ? 200 : 422).entity(res).build();
+        return Response.status(res.status().equals("APPLIED") ? 200 : 422)
+                .entity(res)
+                .build();
+    }
+
+    @POST
+    @Path("/bulk-xlsx")
+    @Consumes("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    public Response bulkXlsx(
+            @Auth RdmmeshPrincipal principal, @PathParam("versionId") String versionId, InputStream body) {
+        UUID v = parseUuid(versionId, "versionId");
+        BulkResult res;
+        try {
+            res = authoring.bulkUpsertXlsx(v, body, principal.omUserId());
+        } catch (IllegalStateException e) {
+            throw new WebApplicationException(e.getMessage(), Response.Status.CONFLICT);
+        }
+        return Response.status(res.status().equals("APPLIED") ? 200 : 422)
+                .entity(res)
+                .build();
     }
 
     private static UUID parseUuid(String s, String field) {
@@ -303,8 +323,7 @@ public final class CodeItemResource {
         ItemPatch toService() {
             if (expectedRowVersion == null) {
                 throw new WebApplicationException(
-                        "expected_row_version is required for PATCH (optimistic lock)",
-                        Response.Status.BAD_REQUEST);
+                        "expected_row_version is required for PATCH (optimistic lock)", Response.Status.BAD_REQUEST);
             }
             return new ItemPatch(
                     expectedRowVersion,
@@ -328,8 +347,7 @@ public final class CodeItemResource {
             return LocalDate.parse(text);
         } catch (DateTimeParseException e) {
             throw new WebApplicationException(
-                    field + " must be ISO date (YYYY-MM-DD), got '" + text + "'",
-                    Response.Status.BAD_REQUEST);
+                    field + " must be ISO date (YYYY-MM-DD), got '" + text + "'", Response.Status.BAD_REQUEST);
         }
     }
 }
