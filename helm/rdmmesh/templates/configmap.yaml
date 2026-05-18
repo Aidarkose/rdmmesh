@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rdmmesh.fullname" . }}-config
+  labels: {{- include "rdmmesh.labels" . | nindent 4 }}
+data:
+  # Не секреты — env-substitution в config.yml / config-prod.yml.
+  RDM_HTTP_PORT: {{ .Values.service.httpPort | quote }}
+  RDM_ADMIN_PORT: {{ .Values.service.adminPort | quote }}
+  RDM_DB_URL: {{ .Values.database.url | quote }}
+  RDM_DB_USER: {{ .Values.database.user | quote }}
+  RDM_FLYWAY_AUTO: {{ .Values.flyway.autoMigrate | quote }}
+  RDM_KC_ISSUER_URI: {{ .Values.keycloak.issuerUri | quote }}
+  RDM_KC_JWKS_URI: {{ .Values.keycloak.jwksUri | quote }}
+  RDM_KC_AUDIENCE: {{ .Values.keycloak.audience | quote }}
+  RDM_OM_BASE_URL: {{ .Values.openmetadata.baseUrl | quote }}
+  # V2 / BR-18 (ADR-0009): движок workflow.
+  RDM_WORKFLOW_ENGINE: {{ .Values.workflow.engine | quote }}
+  # E14 round 13 (Q62): Object-Lock mode архива.
+  RDM_ARCHIVE_LOCK_MODE: {{ .Values.archive.lockMode | quote }}
+  # F4 (E14.12, Q56): allowlist приватных consumer-сетей.
+  RDM_WEBHOOK_EGRESS_PRIVATE_ALLOWLIST: {{ .Values.webhookEgressPrivateAllowlist | quote }}
+  RDM_ENV: {{ .Values.env | quote }}

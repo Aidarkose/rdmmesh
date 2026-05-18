@@ -77,6 +77,12 @@
             <artifactId>jdbi3-sqlobject</artifactId>
         </dependency>
 
+        <!-- PostgresPlugin (UUID[] / hstore / json) — регистрируется в RdmmeshApplication. -->
+        <dependency>
+            <groupId>org.jdbi</groupId>
+            <artifactId>jdbi3-postgres</artifactId>
+        </dependency>
+
         <!--
           JSON-структурированное логирование. Активируется только при выборе соответствующего
           layout/appender в config'е (см. config-prod.yml). dev config.yml остаётся в plain text.
@@ -94,6 +100,14 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- E14 round 10: RustFS/S3 adapter (ArchivePort impl) живёт в
+             composition-root'е — rdmmesh-audit не имеет права тянуть S3-клиент
+             (ArchUnit audit_only_depends_on_api_or_spec). -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
         </dependency>
 
         <!-- ArchUnit lives here so isolation tests can scan the entire classpath at once -->
@@ -162,6 +176,26 @@
                                 </filter>
                             </filters>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- E14 round 9: активируем failsafe. *IT.java гоняются на фазе
+                 integration-test/verify (Testcontainers Postgres). Пропуск —
+                 штатный флаг failsafe `-DskipITs` (CI validate-job его ставит;
+                 push в main/release гоняет полностью). До round 9 плагин жил
+                 только в parent pluginManagement и не был активирован — IT
+                 не запускались вовсе (мягкий долг E1 §3.7). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>integration-tests</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

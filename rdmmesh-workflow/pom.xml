@@ -24,6 +24,18 @@
             <artifactId>dropwizard-jersey</artifactId>
         </dependency>
 
+        <!-- @Auth + @RolesAllowed на ресурсах транзиций / my-tasks. -->
+        <dependency>
+            <groupId>io.dropwizard</groupId>
+            <artifactId>dropwizard-auth</artifactId>
+        </dependency>
+
+        <!-- Managed — FlowableEngineManager (close движка на остановке, ADR-009). -->
+        <dependency>
+            <groupId>io.dropwizard</groupId>
+            <artifactId>dropwizard-lifecycle</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.jdbi</groupId>
             <artifactId>jdbi3-core</artifactId>
@@ -31,7 +43,20 @@
 
         <dependency>
             <groupId>org.jdbi</groupId>
+            <artifactId>jdbi3-sqlobject</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jdbi</groupId>
             <artifactId>jdbi3-postgres</artifactId>
+        </dependency>
+
+        <!-- V2 / BR-18: Flowable BPMN-движок за WorkflowPort (ADR-009).
+             Дефолтный движок — enum-StateMachine; Flowable выбирается
+             config-флагом. Движок строится в internal/engine. -->
+        <dependency>
+            <groupId>org.flowable</groupId>
+            <artifactId>flowable-engine</artifactId>
         </dependency>
     </dependencies>
 </project>

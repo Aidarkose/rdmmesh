@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jdbi.v3.core.Handle;
+
 import bank.rdmmesh.spec.entity.AssetOwnership;
 
 /**
@@ -34,6 +36,14 @@ public interface OwnershipPort {
      * Implementations should be idempotent on {@code source_event_id}.
      */
     void applyChangeEvent(UUID assetId, String assetType, OwnershipDelta delta, String sourceEventId);
+
+    /**
+     * E14 round 5.2 — Handle-overload. OwnershipWebhookService использует его,
+     * чтобы delta-apply + recordIfAbsent журнал попали в одну Postgres tx.
+     * Закрывает split-tx между ownership-write и journal'ом.
+     */
+    void applyChangeEvent(Handle handle, UUID assetId, String assetType,
+                          OwnershipDelta delta, String sourceEventId);
 
     /** Difference between desired and current state for a single asset. */
     record OwnershipDelta(

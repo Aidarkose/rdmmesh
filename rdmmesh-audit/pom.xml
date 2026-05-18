@@ -31,12 +31,35 @@
 
         <dependency>
             <groupId>org.jdbi</groupId>
+            <artifactId>jdbi3-sqlobject</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jdbi</groupId>
             <artifactId>jdbi3-postgres</artifactId>
         </dependency>
 
         <dependency>
             <groupId>org.jdbi</groupId>
             <artifactId>jdbi3-jackson2</artifactId>
+        </dependency>
+
+        <!-- E14 round 1: AuditChainHasher сериализует payload через canonical
+             ObjectMapper. Spec-POJO (VersionPublishedEvent и т.д.) содержат
+             java.time.OffsetDateTime через jsonschema2pojo, поэтому нужен jsr310
+             модуль на classpath (подключается через SPI findAndRegisterModules). -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
+        <!-- E11.2d: REST endpoint для admin audit-viewer'а (handoff E10 §3 #3).
+             dropwizard-auth тянет jakarta-annotation (@RolesAllowed) и Jersey
+             auth-binding. ArchUnit-rule audit_only_depends_on_api_or_spec
+             разрешает io.dropwizard..* (см. ModuleIsolationTest). -->
+        <dependency>
+            <groupId>io.dropwizard</groupId>
+            <artifactId>dropwizard-auth</artifactId>
         </dependency>
     </dependencies>
 </project>

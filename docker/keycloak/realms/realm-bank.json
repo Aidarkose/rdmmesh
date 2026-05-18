@@ -22,6 +22,7 @@
     { "name": "RDM_STEWARD" },
     { "name": "RDM_OWNER" },
     { "name": "RDM_SCHEMA_DESIGNER" },
+    { "name": "RDM_AUDITOR" },
     { "name": "RDM_CONSUMER" }
   ],
 
@@ -32,6 +33,7 @@
       { "name": "RDM_STEWARD",          "description": "Технический ревью draft, approve/reject — per domain." },
       { "name": "RDM_OWNER",            "description": "Бизнес-approve, инициирует publish — per CodeSet (приходит из OM)." },
       { "name": "RDM_SCHEMA_DESIGNER",  "description": "Проектирует CodeSetSchema." },
+      { "name": "RDM_AUDITOR",          "description": "Read-only доступ к audit-журналу и verify-chain (compliance team). Не имеет прав admin'а — не управляет subscriptions, не запускает closure rebuild." },
       { "name": "RDM_CONSUMER",         "description": "Read-only по published-версиям через REST API/UI." }
     ]
   },
@@ -193,6 +195,17 @@
         { "type": "password", "value": "dev", "temporary": false }
       ],
       "groups": ["RDM_OWNER"]
+    },
+    {
+      "username": "dev-auditor",
+      "enabled": true,
+      "email": "dev-auditor@bank.local",
+      "firstName": "Dev",
+      "lastName": "Auditor",
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "groups": ["RDM_AUDITOR"]
     }
   ]
 }

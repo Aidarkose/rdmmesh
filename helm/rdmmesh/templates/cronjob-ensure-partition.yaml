@@ -1,0 +1,39 @@
+{{- if .Values.cronjobs.ensurePartition.enabled }}
+{{- /* Точная функция/семантика — docs/runbooks/code-item-partitioning.md
+       (E14.7). Здесь — каркас: psql вызывает ensure-функцию на след. месяц
+       под rdmmesh_app. Креденшелы — из того же Secret. */ -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "rdmmesh.fullname" . }}-ensure-partition
+  labels: {{- include "rdmmesh.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cronjobs.ensurePartition.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ensure-partition
+              image: {{ .Values.cronjobs.toolImage }}
+              env:
+                - name: PGURL
+                  value: {{ .Values.database.url | quote }}
+                - name: PGUSER
+                  value: {{ .Values.database.user | quote }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: {{ include "rdmmesh.secretName" . }}, key: db-password }
+              command: ["/bin/sh","-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  # См. runbook: имя ensure-функции/таблицы — там. Каркас.
+                  psql "${PGURL#jdbc:}" -U "$PGUSER" -v ON_ERROR_STOP=1 \
+                    -c "SELECT audit.ensure_audit_partition((date_trunc('month', now()) + interval '1 month')::date);"
+{{- end }}

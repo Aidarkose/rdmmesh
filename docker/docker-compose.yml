@@ -54,6 +54,26 @@ services:
     # ввести отдельный wait-job через `wait-for-it.sh`.
     restart: unless-stopped
 
+  # E14 round 10 — immutable audit-archive store. RustFS: Apache-2.0,
+  # S3-совместимый (drop-in MinIO-замена), без AGPL/платных ограничений.
+  # S3 API :9000, web-консоль :9001, контейнер под uid 10001.
+  rustfs:
+    # E14 round 13: запинен конкретный тег (был :latest — невоспроизводимо).
+    # Override: RDM_RUSTFS_IMAGE. Бамп тега — осознанно, после регресс-smoke.
+    image: ${RDM_RUSTFS_IMAGE:-rustfs/rustfs:1.0.0-beta.3}
+    container_name: rdmmesh-rustfs
+    environment:
+      # Дефолтные root-креды RustFS (dev). В prod — из Vault, не в compose.
+      RUSTFS_ACCESS_KEY: ${RDM_ARCHIVE_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RDM_ARCHIVE_SECRET_KEY:-rustfsadmin}
+    volumes:
+      - rdmmesh-rustfs-data:/data
+      - rdmmesh-rustfs-logs:/logs
+    ports:
+      - "${RDM_ARCHIVE_API_PORT:-9000}:9000"
+      - "${RDM_ARCHIVE_CONSOLE_PORT:-9001}:9001"
+    restart: unless-stopped
+
   rdmmesh-service:
     build:
       context: ..
@@ -63,6 +83,8 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
+        condition: service_started
+      rustfs:
         condition: service_started
     environment:
       RDM_DB_URL: jdbc:postgresql://postgres:5432/${RDM_DB_NAME:-rdmmesh}
@@ -82,6 +104,20 @@ services:
       # IdentityPort должен корректно деградировать (см. handoff §6 E2).
       RDM_OM_BASE_URL:   ${RDM_OM_BASE_URL:-}
       RDM_OM_BOT_TOKEN:  ${RDM_OM_BOT_TOKEN:-}
+      # E14 round 10 — immutable audit-archive (RustFS, S3-совместимо).
+      # Endpoint — внутри docker-сети по alias `rustfs`. Disabled-by-default
+      # семантика: пустой RDM_ARCHIVE_ENDPOINT → ArchivePort = no-op-stub
+      # (как OM-lookup в E2), сервис не падает без RustFS.
+      RDM_ARCHIVE_ENDPOINT:   ${RDM_ARCHIVE_ENDPOINT:-http://rustfs:9000}
+      RDM_ARCHIVE_BUCKET:     ${RDM_ARCHIVE_BUCKET:-rdmmesh-audit-archive}
+      RDM_ARCHIVE_ACCESS_KEY: ${RDM_ARCHIVE_ACCESS_KEY:-rustfsadmin}
+      RDM_ARCHIVE_SECRET_KEY: ${RDM_ARCHIVE_SECRET_KEY:-rustfsadmin}
+      RDM_ARCHIVE_REGION:     ${RDM_ARCHIVE_REGION:-us-east-1}
+      # E14 round 13 (Q62): Object-Lock режим. GOVERNANCE (default) —
+      # admin с bypass-правом может снять retention; COMPLIANCE —
+      # необратимо до retain-until даже для root (regulator-mandated
+      # IFRS9). Менять на COMPLIANCE по решению compliance банка.
+      RDM_ARCHIVE_LOCK_MODE:  ${RDM_ARCHIVE_LOCK_MODE:-GOVERNANCE}
     ports:
       - "${RDM_HTTP_PORT:-8080}:8080"
       - "${RDM_ADMIN_PORT:-8081}:8081"
@@ -90,3 +126,7 @@ services:
 volumes:
   rdmmesh-postgres-data:
     name: rdmmesh-postgres-data
+  rdmmesh-rustfs-data:
+    name: rdmmesh-rustfs-data
+  rdmmesh-rustfs-logs:
+    name: rdmmesh-rustfs-logs

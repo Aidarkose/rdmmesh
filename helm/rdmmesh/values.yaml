@@ -1,0 +1,88 @@
+# rdmmesh Helm values. Prod-секреты НЕ держать здесь — Vault/SOPS/external
+# secret (SPEC §3.7: secrets в Vault/SOPS). Значения ниже — дефолты/плейсхолдеры.
+
+image:
+  repository: ghcr.io/aidarkose/rdmmesh-service
+  tag: ""              # пусто → Chart.appVersion
+  pullPolicy: IfNotPresent
+
+replicaCount: 2          # HA; webhook-delivery worker берёт строки FOR UPDATE SKIP LOCKED
+
+resources:
+  requests: { cpu: "500m", memory: "768Mi" }
+  limits:   { cpu: "2",    memory: "1536Mi" }   # -Xmx1g + headroom (.mvn/jvm.config)
+
+service:
+  type: ClusterIP
+  httpPort: 8080         # application connector (/api/v1/*)
+  adminPort: 8081        # admin connector (/healthcheck)
+
+# Внешний Postgres (managed вне чарта). url — без креденшелов.
+database:
+  url: jdbc:postgresql://postgres:5432/rdmmesh
+  user: rdmmesh_app
+
+# Flyway. config-prod.yml ставит autoMigrate=false; в проде миграции —
+# отдельный шаг (см. README §Migrations). Для управляемого rollout'а можно
+# временно выставить true (миграции, вкл. V031/V032 workflow_engine,
+# применятся при старте пода). По умолчанию false (prod-паритет).
+flyway:
+  autoMigrate: false
+
+keycloak:
+  issuerUri: https://keycloak.bank/realms/bank
+  jwksUri:   https://keycloak.bank/realms/bank/protocol/openid-connect/certs
+  audience:  rdmmesh-backend
+
+openmetadata:
+  baseUrl: ""            # пусто → IdentityPort деградирует мягко (provisional UUID)
+
+# V2 / BR-18 (ADR-0009): enum (дефолт, enum-StateMachine) | flowable
+# (in-process BPMN, схема workflow_engine self-managed). Обратимо рестартом.
+workflow:
+  engine: enum
+
+# E14 round 10/13 (Q62): GOVERNANCE (operationally safe, дефолт) | COMPLIANCE
+# (regulator-mandated, необратимо до retain-until). Согласовать с compliance.
+archive:
+  lockMode: GOVERNANCE
+
+# F4 SSRF-guard (E14.12, Q56): CIDR'ы РЕАЛЬНЫХ приватных consumer-сетей через
+# запятую. Пусто → ВСЕ приватные webhook-адресаты запрещены (safe-by-default).
+webhookEgressPrivateAllowlist: ""
+
+env: prod                # config-prod.yml tagging (RDM_ENV)
+
+# Секреты НЕ управляются чартом (SPEC §3.7 — Vault/SOPS). Оператор создаёт
+# Secret вне чарта (Vault Agent / External Secrets / SOPS / kubectl в
+# non-prod) с ключами: db-password, hmac-key, webhook-key, kc-client-secret.
+# Чарт лишь ссылается на него через secretKeyRef.
+secret:
+  existingSecret: rdmmesh-secrets
+
+ingress:
+  enabled: true
+  className: nginx
+  host: rdm.bank
+  tls:
+    enabled: true
+    secretName: rdmmesh-tls
+  # E14.8 §3 #2 — целевой набор security-заголовков (frame-ancestors через
+  # заголовок, не <meta>). Прокидываются как nginx-аннотации.
+  securityHeaders: true
+
+cronjobs:
+  # Ежемесячная архивация audit_log → immutable S3/RustFS
+  # (docs/runbooks/audit-archive.md).
+  auditArchive:
+    enabled: false
+    schedule: "0 2 1 * *"
+  # Ежемесячное создание партиции code_item на следующий месяц
+  # (docs/runbooks/code-item-partitioning.md).
+  ensurePartition:
+    enabled: false
+    schedule: "0 1 25 * *"
+  # Образ с curl+psql для job'ов (по runbook'ам).
+  toolImage: ghcr.io/aidarkose/rdmmesh-ops:0.1.0
+  keycloakTokenUrl: https://keycloak.bank/realms/bank/protocol/openid-connect/token
+  serviceAccountClientId: rdmmesh-bot

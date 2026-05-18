@@ -64,6 +64,12 @@ flyway:
     - classpath:db/migration/ownership
     - classpath:db/migration/audit
 
+# Движок workflow (V2 / BR-18, ADR-009): enum (дефолт, enum-StateMachine,
+# поведение пилота 1:1) либо flowable (in-process BPMN за тем же WorkflowPort,
+# схема workflow_engine, self-managed DDL). Обратимо рестартом.
+workflow:
+  engine: ${RDM_WORKFLOW_ENGINE:-enum}
+
 keycloak:
   issuerUri:     ${RDM_KC_ISSUER_URI:-http://localhost:8090/realms/bank}
   jwksUri:       ${RDM_KC_JWKS_URI:-http://keycloak:8080/realms/bank/protocol/openid-connect/certs}

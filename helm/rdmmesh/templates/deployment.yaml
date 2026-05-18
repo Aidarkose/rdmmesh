@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rdmmesh.fullname" . }}
+  labels: {{- include "rdmmesh.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "rdmmesh.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "rdmmesh.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Рестарт пода при изменении конфига.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001            # Dockerfile uid 10001 (E1 §1.5)
+      containers:
+        - name: rdmmesh
+          image: {{ include "rdmmesh.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http,  containerPort: {{ .Values.service.httpPort }} }
+            - { name: admin, containerPort: {{ .Values.service.adminPort }} }
+          envFrom:
+            - configMapRef:
+                name: {{ include "rdmmesh.fullname" . }}-config
+          env:
+            - name: RDM_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ include "rdmmesh.secretName" . }}, key: db-password }
+            - name: RDM_HMAC_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "rdmmesh.secretName" . }}, key: hmac-key }
+            - name: RDM_WEBHOOK_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "rdmmesh.secretName" . }}, key: webhook-key }
+            - name: RDM_KC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ include "rdmmesh.secretName" . }}, key: kc-client-secret }
+          # Dropwizard admin-коннектор: /healthcheck (E1 §3.1, 3 зелёных чека).
+          readinessProbe:
+            httpGet: { path: /healthcheck, port: admin }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthcheck, port: admin }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources: {{- toYaml .Values.resources | nindent 12 }}

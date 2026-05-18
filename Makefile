@@ -37,8 +37,16 @@ format-check: ## Verify Spotless formatting
 	$(MVN) spotless:check
 
 .PHONY: codegen
-codegen: ## Run JSON Schema codegen for rdmmesh-spec
+codegen: ## Run JSON Schema codegen for rdmmesh-spec (Java POJO)
 	$(MVN) -pl rdmmesh-spec -am generate-sources
+
+.PHONY: codegen-ts
+codegen-ts: ## Run JSON Schema codegen for TypeScript (rdmmesh-ui/src/generated/)
+	cd rdmmesh-ui && npm run codegen
+
+.PHONY: ui-install
+ui-install: ## Install UI npm dependencies
+	cd rdmmesh-ui && npm install
 
 .PHONY: up
 up: ## Start the dev compose stack (postgres, keycloak, rdmmesh-service)

@@ -1,52 +1,72 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>bank.rdmmesh</groupId>
-        <artifactId>rdmmesh-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
-    </parent>
+  <parent>
+    <groupId>bank.rdmmesh</groupId>
+    <artifactId>rdmmesh-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
 
-    <artifactId>rdmmesh-distribution</artifactId>
-    <name>rdmmesh — distribution (read-only consumer-facing API + bulk export)</name>
-    <description>
-        Read-only by contract. ArchUnit asserts that this module performs no DB writes
-        (no INSERT/UPDATE/DELETE statements compile here, only read views).
-    </description>
+  <artifactId>rdmmesh-distribution</artifactId>
+  <name>rdmmesh — distribution (read-only consumer-facing API + bulk export)</name>
+  <description>Read-only by contract. ArchUnit asserts that this module performs no DB writes
+        (no INSERT/UPDATE/DELETE statements compile here, only read views).</description>
 
-    <dependencies>
-        <dependency>
-            <groupId>bank.rdmmesh</groupId>
-            <artifactId>rdmmesh-api</artifactId>
-        </dependency>
+  <dependencies>
+    <dependency>
+      <groupId>bank.rdmmesh</groupId>
+      <artifactId>rdmmesh-api</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>io.dropwizard</groupId>
-            <artifactId>dropwizard-jersey</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>io.dropwizard</groupId>
+      <artifactId>dropwizard-jersey</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>org.jdbi</groupId>
-            <artifactId>jdbi3-core</artifactId>
-        </dependency>
+    <!-- @Auth RdmmeshPrincipal на consumer-эндпоинтах (SPEC §3.5: JWT обязателен). -->
+    <dependency>
+      <groupId>io.dropwizard</groupId>
+      <artifactId>dropwizard-auth</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>org.jdbi</groupId>
-            <artifactId>jdbi3-postgres</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>org.jdbi</groupId>
+      <artifactId>jdbi3-core</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>org.jdbi</groupId>
-            <artifactId>jdbi3-jackson2</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>org.jdbi</groupId>
+      <artifactId>jdbi3-sqlobject</artifactId>
+    </dependency>
 
-        <!-- CSV/Parquet/XLSX export -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-csv</artifactId>
-        </dependency>
-    </dependencies>
+    <dependency>
+      <groupId>org.jdbi</groupId>
+      <artifactId>jdbi3-postgres</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jdbi</groupId>
+      <artifactId>jdbi3-jackson2</artifactId>
+    </dependency>
+
+    <!-- CSV/Parquet/XLSX export -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-csv</artifactId>
+    </dependency>
+
+    <!-- XLSX export (fastexcel writer, streaming) -->
+    <dependency>
+      <groupId>org.dhatim</groupId>
+      <artifactId>fastexcel</artifactId>
+    </dependency>
+
+    <!-- fastexcel-reader — только для тестов: прочитать сгенерённый .xlsx обратно -->
+    <dependency>
+      <groupId>org.dhatim</groupId>
+      <artifactId>fastexcel-reader</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 </project>

@@ -15,9 +15,16 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  * <p>The rules below are intentionally minimal at bootstrap; as modules get filled in we
  * add more invariants (e.g., distribution does no DB writes — SPEC §3.3 row).
  */
+/*
+ * ImportOption.DoNotIncludeJars НЕ используется намеренно: classes сестринских
+ * Maven-модулей (rdmmesh-workflow, rdmmesh-catalog, …) попадают в classpath
+ * rdmmesh-app как JAR'ы. С DoNotIncludeJars ArchUnit их не видит, и strict-правила
+ * вида `*_internal_only_used_by_*` падают «failed to check any classes». Фильтр по
+ * package = "bank.rdmmesh" сам отсекает сторонние библиотеки (jdbi/dropwizard/…).
+ */
 @AnalyzeClasses(
         packages = "bank.rdmmesh",
-        importOptions = {ImportOption.DoNotIncludeTests.class, ImportOption.DoNotIncludeJars.class})
+        importOptions = {ImportOption.DoNotIncludeTests.class})
 public final class ModuleIsolationTest {
 
     /**
@@ -58,43 +65,76 @@ public final class ModuleIsolationTest {
                             "bank.rdmmesh.spec..",
                             "java..", "javax..", "jakarta..",
                             "org.slf4j..", "org.jdbi..",
-                            "com.fasterxml..", "io.dropwizard..")
-                    // The rule is correct, but the module is empty at bootstrap;
-                    // ArchUnit otherwise fails the suite. Removing this once
-                    // rdmmesh-audit gets its first class is mandatory.
-                    .allowEmptyShould(true);
+                            "com.fasterxml..", "io.dropwizard..");
 
     /**
-     * No bounded context may reach into another's internal sub-packages. Все классы
-     * соседнего модуля доступны только через public API (root-package + любое не-internal
-     * подмножество). Internal импортирует ТОЛЬКО собственный модуль.
+     * Никакой модуль не может тянуть {@code internal}-пакет соседа. Все классы соседнего
+     * модуля доступны только через публичный API (root-package + любое не-internal
+     * подмножество). Внутри одного модуля {@code resource → internal.service} — норма
+     * (см. SPEC §3.3 и pattern catalog/identity/ownership).
      *
-     * <p>Реализация через slice-rule, чтобы за каждый сторонний модуль писать одно правило,
-     * а не N×N.
+     * <p>Реализация — по одному правилу на каждый internal-пакет: «классы из {@code X.internal}
+     * могут иметь зависимыми только классы из {@code X..} (свой же модуль) либо общую
+     * api/spec/runtime инфраструктуру». Это проверяет именно изоляцию internal'а, не запрещая
+     * легитимные intra-module пути от resource к service.
+     *
+     * <p><b>Note для будущих эпиков.</b> При появлении новых модулей дополнить список парой
+     * {@code @ArchTest} + строкой в общем allow'е (см. {@code allowedConsumersOf}).
      */
     @ArchTest
-    static final ArchRule modules_do_not_import_internals =
-            noClasses()
-                    .that().resideInAPackage("bank.rdmmesh.(catalog|authoring|workflow|publishing|distribution|identity|ownership|audit|app)..")
-                    .and().resideOutsideOfPackages(
-                            "bank.rdmmesh.catalog.internal..",
-                            "bank.rdmmesh.authoring.internal..",
-                            "bank.rdmmesh.workflow.internal..",
-                            "bank.rdmmesh.publishing.internal..",
-                            "bank.rdmmesh.distribution.internal..",
-                            "bank.rdmmesh.identity.internal..",
-                            "bank.rdmmesh.ownership.internal..",
-                            "bank.rdmmesh.audit.internal..")
-                    .should().dependOnClassesThat()
-                    .resideInAnyPackage(
-                            "bank.rdmmesh.catalog.internal..",
-                            "bank.rdmmesh.authoring.internal..",
-                            "bank.rdmmesh.workflow.internal..",
-                            "bank.rdmmesh.publishing.internal..",
-                            "bank.rdmmesh.distribution.internal..",
-                            "bank.rdmmesh.identity.internal..",
-                            "bank.rdmmesh.ownership.internal..",
-                            "bank.rdmmesh.audit.internal..");
+    static final ArchRule catalog_internal_only_used_by_catalog =
+            internalSliceUsedOnlyBy("catalog");
+    @ArchTest
+    static final ArchRule authoring_internal_only_used_by_authoring =
+            internalSliceUsedOnlyBy("authoring");
+    @ArchTest
+    static final ArchRule workflow_internal_only_used_by_workflow =
+            internalSliceUsedOnlyByStrict("workflow");
+    @ArchTest
+    static final ArchRule publishing_internal_only_used_by_publishing =
+            internalSliceUsedOnlyByStrict("publishing");
+    @ArchTest
+    static final ArchRule distribution_internal_only_used_by_distribution =
+            internalSliceUsedOnlyByStrict("distribution");
+    @ArchTest
+    static final ArchRule identity_internal_only_used_by_identity =
+            internalSliceUsedOnlyBy("identity");
+    @ArchTest
+    static final ArchRule ownership_internal_only_used_by_ownership =
+            internalSliceUsedOnlyByStrict("ownership");
+    @ArchTest
+    static final ArchRule audit_internal_only_used_by_audit =
+            internalSliceUsedOnlyByStrict("audit");
+
+    private static ArchRule internalSliceUsedOnlyBy(String moduleName) {
+        return classes()
+                .that().resideInAPackage("bank.rdmmesh." + moduleName + ".internal..")
+                .should().onlyHaveDependentClassesThat()
+                .resideInAnyPackage(
+                        "bank.rdmmesh." + moduleName + "..",
+                        // app — composition root, может wire'ить любой internal через
+                        // публичные factory-методы (см. *Module.build()).
+                        "bank.rdmmesh.app..",
+                        "bank.rdmmesh.api..",
+                        "bank.rdmmesh.spec..")
+                .allowEmptyShould(true);
+    }
+
+    /**
+     * Тот же контракт, но без {@code allowEmptyShould(true)} — снимается, как только в
+     * соответствующем модуле появился хотя бы один класс в {@code internal..} (так
+     * регрессии "пустое правило проходит" не маскируют новый код).
+     */
+    private static ArchRule internalSliceUsedOnlyByStrict(String moduleName) {
+        return classes()
+                .that().resideInAPackage("bank.rdmmesh." + moduleName + ".internal..")
+                .should().onlyHaveDependentClassesThat()
+                .resideInAnyPackage(
+                        "bank.rdmmesh." + moduleName + "..",
+                        "bank.rdmmesh.app..",
+                        "bank.rdmmesh.api..",
+                        "bank.rdmmesh.spec..");
+    }
 
     /**
      * SPEC §3.3: модуль {@code distribution} read-only — никаких UPDATE/INSERT/DELETE.
@@ -110,6 +150,5 @@ public final class ModuleIsolationTest {
                     .should().dependOnClassesThat()
                     .haveFullyQualifiedName("org.jdbi.v3.sqlobject.statement.SqlUpdate")
                     .orShould().dependOnClassesThat()
-                    .haveFullyQualifiedName("org.jdbi.v3.sqlobject.statement.SqlBatch")
-                    .allowEmptyShould(true);
+                    .haveFullyQualifiedName("org.jdbi.v3.sqlobject.statement.SqlBatch");
 }

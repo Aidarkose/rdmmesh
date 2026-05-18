@@ -35,6 +35,11 @@ public final class RdmmeshConfiguration extends Configuration {
     @JsonProperty("openmetadata")
     private OpenMetadataConfig openmetadata = new OpenMetadataConfig();
 
+    @Valid
+    @NotNull
+    @JsonProperty("workflow")
+    private WorkflowConfig workflow = new WorkflowConfig();
+
     public DataSourceFactory getDatabase() {
         return database;
     }
@@ -49,6 +54,31 @@ public final class RdmmeshConfiguration extends Configuration {
 
     public OpenMetadataConfig getOpenmetadata() {
         return openmetadata;
+    }
+
+    public WorkflowConfig getWorkflow() {
+        return workflow;
+    }
+
+    /**
+     * Выбор движка workflow (V2 / BR-18, ADR-009). {@code enum} — дефолтная
+     * enum-StateMachine (поведение пилота 1:1, нулевой риск); {@code flowable}
+     * — in-process BPMN-движок Flowable за тем же {@code WorkflowPort}.
+     * Обратимо рестартом с другим {@code RDM_WORKFLOW_ENGINE}.
+     */
+    public static final class WorkflowConfig {
+
+        @JsonProperty("engine")
+        @NotNull
+        private String engine = "enum";
+
+        public String getEngine() {
+            return engine;
+        }
+
+        public boolean isFlowable() {
+            return "flowable".equalsIgnoreCase(engine.trim());
+        }
     }
 
     /** Flyway-specific knobs that are not in the upstream {@code DataSourceFactory}. */

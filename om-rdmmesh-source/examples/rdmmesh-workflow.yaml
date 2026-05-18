@@ -1,0 +1,71 @@
+# OM ingestion workflow для rdmmesh.
+#
+# vanilla-OM подход: используется generic CustomDatabaseConnection +
+# sourcePythonClass discovery (см. openmetadata-spec/.../customDatabaseConnection.json).
+# В OM никаких правок делать не надо — только установить наш pip-пакет в OM venv:
+#     pip install -e /path/to/rdmmesh/om-rdmmesh-source
+#
+# Запуск:
+#     metadata ingest -c rdmmesh-workflow.yaml
+#
+# Предусловия:
+#   1. rdmmesh REST API доступен по connectionOptions.hostPort.
+#   2. Keycloak realm с confidential client `rdmmesh-backend` (E2).
+#   3. OM Server поднят на workflowConfig.openMetadataServerConfig.hostPort.
+#   4. Получен OM bot JWT (Settings → Bots → ingestion-bot → JWT).
+
+source:
+  type: customdatabase
+  serviceName: rdmmesh
+  serviceConnection:
+    config:
+      type: CustomDatabase
+      sourcePythonClass: metadata.ingestion.source.database.rdmmesh.metadata.RdmmeshSource
+      connectionOptions:
+        # Базовый URL rdmmesh REST. В docker-network OM →
+        # http://host.docker.internal:8080 либо http://rdmmesh-service:8080.
+        hostPort: http://localhost:8080
+        # Keycloak realm-issuer. В docker-network: http://keycloak:8080/realms/bank.
+        keycloakIssuerUri: http://localhost:8090/realms/bank
+        clientId: rdmmesh-backend
+        # Dev-секрет совпадает с E2 realm-bank.json. В prod — Vault / OM Secret Manager.
+        # NB: connectionOptions хранится в OM-БД как plain Map<String,String> —
+        # encrypt-at-rest зависит от OM-конфига и Secret Manager'а.
+        clientSecret: dev-backend-secret
+        # Все значения connectionOptions — строки, парсятся в нашем connection.py:
+        requestTimeoutSeconds: "30"
+        verifySSL: "false"
+      # Фильтры applied к именам schemas (rdmmesh domain) и tables (CodeSet).
+      schemaFilterPattern:
+        includes:
+          - ".*"
+        excludes: []
+      tableFilterPattern:
+        includes:
+          - ".*"
+        excludes: []
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      includeTables: true
+      includeViews: false
+      includeTags: false
+      # Включаем — deleted_at-CodeSet'ы помечаются в OM как удалённые
+      # на следующем цикле (diff с предыдущим прогоном).
+      markDeletedTables: true
+      markDeletedSchemas: true
+      useFqnForFiltering: false
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: http://localhost:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      # Получить через UI: Settings → Bots → ingestion-bot → JWT;
+      # или REST `POST /api/v1/users/auth-mechanism`.
+      jwtToken: REPLACE_WITH_OM_BOT_JWT
