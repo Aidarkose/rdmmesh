@@ -5,6 +5,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
+
+import bank.rdmmesh.workflow.internal.WorkflowGraph;
+import bank.rdmmesh.workflow.internal.WorkflowGraphCodec;
+import bank.rdmmesh.workflow.internal.WorkflowGraphInvariants;
 
 import org.flowable.bpmn.converter.BpmnXMLConverter;
 import org.flowable.bpmn.model.BpmnModel;
@@ -41,8 +46,16 @@ public final class BpmnTemplateValidator {
 
     private BpmnTemplateValidator() {}
 
-    /** Результат валидации: ключ (process id) задеплоенного определения. */
-    public record Contract(String processKey) {}
+    /**
+     * Результат валидации: ключ (process id) + опц. per-domain граф
+     * (ADR-0010 B2). {@code graph} пуст → домен использует дефолтный
+     * 4-eyes. {@code graphJson} — канонический JSON для хранения в
+     * {@code workflow_template.graph_json}.
+     */
+    public record Contract(
+            String processKey,
+            Optional<WorkflowGraph> graph,
+            Optional<String> graphJson) {}
 
     /**
      * Парсит BPMN и проверяет якоря контракта.
@@ -89,7 +102,15 @@ public final class BpmnTemplateValidator {
                     "BPMN не соответствует контракту шаблона: нет service-task "
                             + "с delegateExpression " + REQUIRED_DELEGATE);
         }
-        return new Contract(process.getId());
+
+        // ADR-0010 B2: если BPMN несёт <rdm:workflowGraph> — это deploy-time
+        // compliance-gate. Граф ОБЯЗАН пройти WorkflowGraphInvariants
+        // (нельзя обойти 4-eyes); невалидный → 400, в Flowable/реестр НЕ
+        // попадает. Нет графа → домен остаётся на дефолтном 4-eyes.
+        Optional<WorkflowGraph> graph = WorkflowGraphCodec.fromBpmn(process);
+        graph.ifPresent(WorkflowGraphInvariants::validate);
+        Optional<String> graphJson = graph.map(WorkflowGraphCodec::toJson);
+        return new Contract(process.getId(), graph, graphJson);
     }
 
     /** SHA-256 (hex) BPMN-XML — для реестра/воспроизводимости (V032). */

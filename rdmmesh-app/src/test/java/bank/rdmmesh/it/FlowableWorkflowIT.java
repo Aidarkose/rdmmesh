@@ -68,6 +68,44 @@ final class FlowableWorkflowIT extends PostgresIT {
         </definitions>
         """;
 
+    /**
+     * Per-domain BPMN c <rdm:workflowGraph> (ADR-0010 B2): граф БЕЗ
+     * owner_reject (STEWARD_APPROVED→DRAFT). Compliant (submit→steward→
+     * owner). Доказывает, что WorkflowService судит по графу ДОМЕНА:
+     * owner_reject легален в дефолте, но в этом домене — нет.
+     */
+    private static final String CUSTOM_GRAPH_BPMN = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                     xmlns:flowable="http://flowable.org/bpmn"
+                     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                     targetNamespace="http://rdmmesh.bank/wf">
+          <process id="custom_graph_dom" name="no-owner-reject" isExecutable="true">
+            <extensionElements>
+              <rdm:workflowGraph xmlns:rdm="http://rdmmesh.bank/bpmn">[
+                {"from":"DRAFT","to":"IN_REVIEW","action":"submit","kind":"SUBMIT"},
+                {"from":"IN_REVIEW","to":"STEWARD_APPROVED","action":"steward_approve","kind":"STEWARD","recordReviewer":true},
+                {"from":"IN_REVIEW","to":"DRAFT","action":"steward_reject","kind":"STEWARD","reject":true},
+                {"from":"STEWARD_APPROVED","to":"OWNER_APPROVED","action":"owner_approve","kind":"OWNER","setApprover":true}
+              ]</rdm:workflowGraph>
+            </extensionElements>
+            <startEvent id="s"/>
+            <sequenceFlow id="f0" sourceRef="s" targetRef="rt_await"/>
+            <receiveTask id="rt_await" name="await"/>
+            <sequenceFlow id="f1" sourceRef="rt_await" targetRef="svc"/>
+            <serviceTask id="svc" name="apply"
+                         flowable:delegateExpression="${rdmTransitionDelegate}"/>
+            <sequenceFlow id="f2" sourceRef="svc" targetRef="gw"/>
+            <exclusiveGateway id="gw" default="f_loop"/>
+            <sequenceFlow id="f_end" sourceRef="gw" targetRef="e">
+              <conditionExpression xsi:type="tFormalExpression">${terminal == true}</conditionExpression>
+            </sequenceFlow>
+            <sequenceFlow id="f_loop" sourceRef="gw" targetRef="rt_await"/>
+            <endEvent id="e"/>
+          </process>
+        </definitions>
+        """;
+
     private record Ctx(Jdbi jdbi, WorkflowService service,
                        FlowableEngineManager manager, FlowableWorkflowEngine engine) {}
 
@@ -181,6 +219,48 @@ final class FlowableWorkflowIT extends PostgresIT {
                     .as("осиротевший инстанс погашен").isZero();
 
             ctx.manager().cancelForVersion(v); // идемпотентно — без исключений
+        } finally {
+            ctx.manager().stop();
+        }
+    }
+
+    @Test
+    void perDomainGraphIsAuthoritativeAtRuntime() throws SQLException {
+        UUID admin = UUID.randomUUID();
+        UUID author = UUID.randomUUID();
+        UUID steward = UUID.randomUUID();
+        UUID owner = UUID.randomUUID();
+        Seed s = seedDraft(author, "graph");
+        UUID v = s.versionId();
+        UUID domain = s.domainId();
+
+        Ctx ctx = buildCtx();
+        try {
+            WorkflowTemplateService templates =
+                    new WorkflowTemplateService(ctx.jdbi(), ctx.manager());
+            WorkflowTemplateService.DeployResult dr = templates.deploy(
+                    domain, CUSTOM_GRAPH_BPMN.getBytes(StandardCharsets.UTF_8), admin);
+            assertThat(dr.processKey()).isEqualTo("custom_graph_dom");
+            assertThat(ctx.jdbi().withExtension(WorkflowTemplateDao.class,
+                            d -> d.findActiveByDomain(domain)).orElseThrow().graphJson())
+                    .as("graph_json записан (B2)").isNotNull();
+
+            ctx.engine().transition(v, "IN_REVIEW", author, Set.of("RDM_AUTHOR"), null);
+            ctx.engine().transition(
+                    v, "STEWARD_APPROVED", steward, Set.of("RDM_STEWARD"), null);
+            assertThat(status(v)).isEqualTo("STEWARD_APPROVED");
+
+            // owner_reject (STEWARD_APPROVED→DRAFT) ЛЕГАЛЕН в дефолтном
+            // 4-eyes, но граф ДОМЕНА его не содержит → WorkflowService судит
+            // по графу домена → IllegalStateTransition (доказывает B2).
+            assertThatThrownBy(() -> ctx.engine().transition(
+                            v, "DRAFT", owner, Set.of("RDM_OWNER"), "rollback"))
+                    .isInstanceOf(WorkflowPort.IllegalStateTransitionException.class);
+            assertThat(status(v)).isEqualTo("STEWARD_APPROVED");
+
+            // owner_approve — есть в графе домена → проходит.
+            ctx.engine().transition(v, "OWNER_APPROVED", owner, Set.of("RDM_OWNER"), null);
+            assertThat(status(v)).isEqualTo("OWNER_APPROVED");
         } finally {
             ctx.manager().stop();
         }

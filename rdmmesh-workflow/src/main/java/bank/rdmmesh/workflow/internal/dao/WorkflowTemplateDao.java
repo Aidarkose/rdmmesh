@@ -22,21 +22,22 @@ public interface WorkflowTemplateDao {
 
     String COLUMNS =
             "id, domain_id, process_key, flowable_deployment_id, bpmn_sha256,"
-                    + " version, deployed_by, deployed_at, active";
+                    + " version, deployed_by, deployed_at, active, graph_json";
 
     @SqlUpdate(
             "INSERT INTO workflow.workflow_template"
                     + " (domain_id, process_key, flowable_deployment_id, bpmn_sha256,"
-                    + "  version, deployed_by)"
+                    + "  version, deployed_by, graph_json)"
                     + " VALUES (:domainId, :processKey, :flowableDeploymentId,"
-                    + "         :bpmnSha256, :version, :deployedBy)")
+                    + "         :bpmnSha256, :version, :deployedBy, :graphJson)")
     int insert(
             @Bind("domainId") UUID domainId,
             @Bind("processKey") String processKey,
             @Bind("flowableDeploymentId") String flowableDeploymentId,
             @Bind("bpmnSha256") String bpmnSha256,
             @Bind("version") int version,
-            @Bind("deployedBy") UUID deployedBy);
+            @Bind("deployedBy") UUID deployedBy,
+            @Bind("graphJson") String graphJson);
 
     /** Снимает active с текущего активного шаблона домена (перед вставкой нового). */
     @SqlUpdate("UPDATE workflow.workflow_template SET active = false"
@@ -66,5 +67,6 @@ public interface WorkflowTemplateDao {
             int version,
             UUID deployedBy,
             Instant deployedAt,
-            boolean active) {}
+            boolean active,
+            String graphJson) {}
 }

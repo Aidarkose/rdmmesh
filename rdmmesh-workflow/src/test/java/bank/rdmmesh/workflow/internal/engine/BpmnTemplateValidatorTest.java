@@ -28,11 +28,49 @@ final class BpmnTemplateValidatorTest {
     private static final String DELEGATE =
             "<serviceTask id=\"svc\" flowable:delegateExpression=\"${rdmTransitionDelegate}\"/>";
 
+    /** process-level extensionElements c rdm:workflowGraph(JSON). */
+    private static String graphExt(String json) {
+        return "<extensionElements>"
+                + "<rdm:workflowGraph xmlns:rdm=\"http://rdmmesh.bank/bpmn\">"
+                + json + "</rdm:workflowGraph></extensionElements>";
+    }
+
+    private static final String COMPLIANT_GRAPH =
+            "[{\"from\":\"DRAFT\",\"to\":\"IN_REVIEW\",\"action\":\"submit\","
+            + "\"kind\":\"SUBMIT\"},"
+            + "{\"from\":\"IN_REVIEW\",\"to\":\"STEWARD_APPROVED\","
+            + "\"action\":\"steward_approve\",\"kind\":\"STEWARD\","
+            + "\"recordReviewer\":true},"
+            + "{\"from\":\"STEWARD_APPROVED\",\"to\":\"OWNER_APPROVED\","
+            + "\"action\":\"owner_approve\",\"kind\":\"OWNER\",\"setApprover\":true}]";
+
     @Test
     void validTemplateReturnsProcessKey() {
         BpmnTemplateValidator.Contract c =
                 BpmnTemplateValidator.validate(bpmn(AWAIT + DELEGATE));
         assertThat(c.processKey()).isEqualTo("custom_proc");
+        assertThat(c.graph()).isEmpty(); // нет графа → дефолтный 4-eyes
+    }
+
+    @Test
+    void compliantGraphInBpmnIsParsedAndStored() {
+        BpmnTemplateValidator.Contract c = BpmnTemplateValidator.validate(
+                bpmn(graphExt(COMPLIANT_GRAPH) + AWAIT + DELEGATE));
+        assertThat(c.processKey()).isEqualTo("custom_proc");
+        assertThat(c.graph()).isPresent();
+        assertThat(c.graphJson()).isPresent();
+        assertThat(c.graph().get().edges()).hasSize(3);
+    }
+
+    @Test
+    void nonCompliantGraphInBpmnRejectedAtDeploy() {
+        // Прямое DRAFT→OWNER_APPROVED в обход steward.
+        String bad = "[{\"from\":\"DRAFT\",\"to\":\"OWNER_APPROVED\","
+                + "\"action\":\"owner_approve\",\"kind\":\"OWNER\"}]";
+        assertThatThrownBy(() -> BpmnTemplateValidator.validate(
+                        bpmn(graphExt(bad) + AWAIT + DELEGATE)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("STEWARD");
     }
 
     @Test

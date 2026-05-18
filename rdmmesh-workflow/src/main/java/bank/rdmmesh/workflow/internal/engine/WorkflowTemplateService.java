@@ -45,14 +45,19 @@ public final class WorkflowTemplateService {
      */
     public DeployResult deploy(UUID domainId, byte[] bpmnXml, UUID deployedBy) {
         String sha = BpmnTemplateValidator.sha256Hex(bpmnXml);
+        // ADR-0010 B2: контракт + per-domain граф + WorkflowGraphInvariants
+        // (deploy-time compliance-gate) ДО Flowable-деплоя — невалидный
+        // граф → IllegalArgumentException (400), ничего не задеплоено.
+        BpmnTemplateValidator.Contract c = BpmnTemplateValidator.validate(bpmnXml);
+        String graphJson = c.graphJson().orElse(null);
         FlowableEngineManager.DomainDeployment dep =
-                manager.deployForDomain(domainId, bpmnXml); // валидирует + деплоит
+                manager.deployForDomain(domainId, bpmnXml); // деплой (re-validate idem.)
         int version = jdbi.inTransaction(h -> {
             WorkflowTemplateDao dao = h.attach(WorkflowTemplateDao.class);
             dao.deactivateActive(domainId);
             int v = dao.nextVersion(domainId);
             dao.insert(domainId, dep.processKey(), dep.flowableDeploymentId(),
-                    sha, v, deployedBy);
+                    sha, v, deployedBy, graphJson);
             return v;
         });
         log.info("workflow-template: domain={} key={} v{} sha={} by={}",

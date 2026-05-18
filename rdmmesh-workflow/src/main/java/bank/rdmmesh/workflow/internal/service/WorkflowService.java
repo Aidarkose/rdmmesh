@@ -28,8 +28,12 @@ import bank.rdmmesh.workflow.internal.StateMachine;
 import bank.rdmmesh.workflow.internal.StateMachine.Action;
 import bank.rdmmesh.workflow.internal.StateMachine.Decision;
 import bank.rdmmesh.workflow.internal.StateMachine.Status;
+import bank.rdmmesh.workflow.internal.WorkflowGraph;
+import bank.rdmmesh.workflow.internal.WorkflowGraphCodec;
+import bank.rdmmesh.workflow.internal.WorkflowGraphInvariants;
 import bank.rdmmesh.workflow.internal.dao.ApprovalTaskDao;
 import bank.rdmmesh.workflow.internal.dao.ApprovalTaskDao.ApprovalTaskRow;
+import bank.rdmmesh.workflow.internal.dao.WorkflowTemplateDao;
 import bank.rdmmesh.workflow.internal.dao.WorkflowTransitionDao;
 import bank.rdmmesh.workflow.internal.dao.WorkflowTransitionDao.TransitionRow;
 
@@ -105,7 +109,12 @@ public final class WorkflowService {
         StateMachine.Request req = new StateMachine.Request(
                 from, to, actor, version.createdBy(),
                 reviewers, assetRoles, baseRoles, comment);
-        Decision decision = StateMachine.validate(req);
+        // ADR-0010 B2: легальность проверяется против ГРАФА ДОМЕНА версии
+        // (per-domain BPMN), иначе дефолтный 4-eyes. resolveGraph fail-safe
+        // к дефолту + re-validate инвариантов (defense-in-depth: даже
+        // tampered DB-row не ослабит no-bypass).
+        WorkflowGraph graph = resolveGraph(codeSet.domainId());
+        Decision decision = StateMachine.validate(req, graph);
 
         TransitionEffect effect = new TransitionEffect(
                 decision.recordReviewer(), decision.setApprover());
@@ -115,7 +124,7 @@ public final class WorkflowService {
         // внутри write-tx — увеличивает время удержания row-lock'а на
         // code_set_version. Plain pre-fetch вне tx — корректен (роли в OM
         // меняются через webhook, который тоже идёт через свою tx).
-        String nextRole = StateMachine.nextRequiredRole(to);
+        String nextRole = graph.nextRequiredRole(to);
         UUID[] candidates = (nextRole == null)
                 ? null
                 : candidatesFor(version.codesetId(), nextRole);
@@ -208,6 +217,40 @@ public final class WorkflowService {
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Граф топологии для домена версии (ADR-0010 B2). Активный шаблон с
+     * {@code graph_json} → его граф; нет/NULL → дефолтный 4-eyes.
+     *
+     * <p><b>Fail-safe + defense-in-depth.</b> Любой сбой (битый/tampered
+     * JSON, не прошёл {@link WorkflowGraphInvariants}) → дефолтный
+     * 4-eyes (строжайший known-good — НЕ ослабление no-bypass). Инварианты
+     * прогоняются и на чтении, не только при деплое: подмена строки в БД
+     * не может ослабить 4-eyes в рантайме.
+     */
+    private WorkflowGraph resolveGraph(UUID domainId) {
+        if (domainId == null) {
+            return WorkflowGraph.defaultFourEyes();
+        }
+        try {
+            String gj = jdbi.withExtension(WorkflowTemplateDao.class,
+                            d -> d.findActiveByDomain(domainId))
+                    .map(WorkflowTemplateDao.TemplateRow::graphJson)
+                    .orElse(null);
+            if (gj == null || gj.isBlank()) {
+                return WorkflowGraph.defaultFourEyes();
+            }
+            WorkflowGraph g = WorkflowGraphCodec.fromJson(gj);
+            WorkflowGraphInvariants.validate(g);
+            log.debug("workflow: per-domain graph domain={} edges={}",
+                    domainId, g.edges().size());
+            return g;
+        } catch (RuntimeException e) {
+            log.warn("workflow: per-domain graph load failed domain={} → "
+                    + "default 4-eyes (fail-safe): {}", domainId, e.toString());
+            return WorkflowGraph.defaultFourEyes();
+        }
+    }
 
     private UUID[] candidatesFor(UUID codesetId, String requiredRole) {
         List<AssetOwnership> all = ownership.ownersOf(codesetId, "CODESET");

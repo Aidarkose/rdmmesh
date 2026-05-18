@@ -88,6 +88,33 @@ public final class WorkflowGraph {
         return edges;
     }
 
+    /**
+     * Какая роль требуется на approval-task'е ПОСЛЕ достижения
+     * {@code reached} — по исходящим non-reject рёбрам: STEWARD-ребро →
+     * {@code "STEWARD"}, иначе OWNER → {@code "OWNER"}, иначе {@code null}.
+     * Для {@link #defaultFourEyes()} == прежний
+     * {@code StateMachine.nextRequiredRole} (IN_REVIEW→STEWARD,
+     * STEWARD_APPROVED→OWNER, прочее→null).
+     */
+    public String nextRequiredRole(Status reached) {
+        boolean steward = false;
+        boolean owner = false;
+        for (Map.Entry<Edge, EdgeSpec> e : edges.entrySet()) {
+            if (e.getKey().from() != reached || e.getValue().reject()) {
+                continue;
+            }
+            if (e.getValue().kind() == Kind.STEWARD) {
+                steward = true;
+            } else if (e.getValue().kind() == Kind.OWNER) {
+                owner = true;
+            }
+        }
+        if (steward) {
+            return "STEWARD";
+        }
+        return owner ? "OWNER" : null;
+    }
+
     /** Карта смежности (для инвариантов / документации). */
     public Map<Status, EnumSet<Status>> adjacency() {
         Map<Status, EnumSet<Status>> m = new LinkedHashMap<>();

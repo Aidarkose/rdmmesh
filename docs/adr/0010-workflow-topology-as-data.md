@@ -92,11 +92,16 @@ prod — gate (DoD §5.4), как E14.8.
   графы (skip steward / fake-kind / submit-в-терминал / system-reject /
   недостижимость) отвергаются; self-approval на кастомном графе всё равно
   409.
-- **B2 — следующий:** per-domain BPMN кодирует граф (flowable extension
-  elements) → парс при деплое → `WorkflowGraphInvariants` как deploy-time
-  gate (невалид → 400) → хранение графа рядом с `workflow_template`
-  (V032) → `WorkflowService` выбирает граф домена версии вместо
-  дефолтного. Тогда домен реально получает расходящуюся топологию.
+- **B2 — сделано (E16.5):** per-domain BPMN несёт граф в
+  process-extension `<rdm:workflowGraph>` (JSON-рёбра); `WorkflowGraphCodec`
+  парсит, `BpmnTemplateValidator` гонит `WorkflowGraphInvariants` как
+  **deploy-time gate** (невалид → 400, в Flowable/реестр НЕ попадает);
+  канонический JSON хранится в `workflow_template.graph_json` (Flyway
+  V033). `WorkflowService.resolveGraph(domainId)` судит каждый переход
+  по графу домена версии (нет/битый → fail-safe дефолт + re-validate
+  инвариантов на чтении — tampered DB-row не ослабит no-bypass).
+  Доказано: IT — owner_reject легален в дефолте, но домен без него в
+  графе → IllegalStateTransition; non-compliant граф → 400.
 - **B3:** security-review (OWASP + no-bypass на произвольных графах,
   как E14.8) + расширенные property-тесты перед включением кастомных
   графов в prod.
