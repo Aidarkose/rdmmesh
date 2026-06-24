@@ -40,17 +40,33 @@ public interface UserMappingDao {
     Optional<UserMappingRow> findByUsername(@Bind("username") String username);
 
     /**
-     * Идемпотентная вставка: если уже есть строка с тем же {@code keycloak_sub}, обновляет
-     * last_seen_at + display_name/email (на случай переименования). PK-конфликт по
-     * {@code om_user_id} тоже обрабатывается — это фактически тот же пользователь.
+     * Идемпотентная lazy-вставка маппинга, реконсилируемая по <b>стабильному
+     * натуральному ключу — {@code username}</b> (sAMAccountName).
+     *
+     * <p><b>Почему конфликт по {@code username}, а не по {@code keycloak_sub}.</b>
+     * {@code username} идентифицирует пользователя неизменно; {@code keycloak_sub}
+     * меняется при ре-провижининге Keycloak (новый realm / пере-импорт из AD), а
+     * {@code om_user_id} — при сбросе/переезде OM либо при переходе
+     * provisional → real (SPEC §2.4 явно разрешает {@code UPDATE SET om_user_id
+     * = real} как reconciliation). Прежняя версия конфликтовала только по
+     * {@code keycloak_sub}: при новом {@code sub} с тем же {@code username}
+     * INSERT нарушал {@code unique(username)} (и/или PK {@code om_user_id}) →
+     * HTTP 500 на первом же запросе после пересборки Keycloak.
+     *
+     * <p>Теперь конфликт по {@code username} обновляет «подвижные»
+     * идентификаторы ({@code om_user_id}, {@code keycloak_sub}) и
+     * last_seen/email/display_name, сохраняя {@code first_seen_at}. Внешних FK
+     * на {@code om_user_id} нет (проверено) — обновление PK безопасно.
      */
     @SqlUpdate(
             """
             INSERT INTO identity.rdm_user_mapping
                 (om_user_id, keycloak_sub, username, email, display_name)
             VALUES (:omUserId, :keycloakSub, :username, :email, :displayName)
-            ON CONFLICT (keycloak_sub) DO UPDATE
-              SET last_seen_at = now(),
+            ON CONFLICT (username) DO UPDATE
+              SET om_user_id   = EXCLUDED.om_user_id,
+                  keycloak_sub = EXCLUDED.keycloak_sub,
+                  last_seen_at = now(),
                   email        = COALESCE(EXCLUDED.email, identity.rdm_user_mapping.email),
                   display_name = COALESCE(EXCLUDED.display_name, identity.rdm_user_mapping.display_name)
             """)

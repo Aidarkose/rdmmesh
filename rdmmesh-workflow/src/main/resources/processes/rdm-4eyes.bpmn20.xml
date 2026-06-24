@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Дефолтный 4-eyes как BPMN (V2 / BR-18, ADR-009 — foundation-слайс).
+
+  Топология НАМЕРЕННО минимальна: receive-task (точка ожидания внешнего
+  transition'а) → service-task (делегирует в существующий WorkflowService:
+  валидация + атомарные side-эффекты + event) → шлюз: достигнут OWNER_APPROVED
+  → конец; иначе (в т.ч. reject→DRAFT) — петля назад к ожиданию.
+
+  Легальность перехода (DRAFT→IN_REVIEW→… , reject-обратки) остаётся
+  авторитетной в enum-StateMachine внутри WorkflowService — в этом раунде
+  BPMN-граф её зеркалит. Дивергентная per-domain топология (где BPMN сам
+  задаёт маршрут) — следующий раунд; сейчас доказывается интеграция движка
+  и сам seam (как и согласовано в scope foundation-слайса).
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             targetNamespace="http://rdmmesh.bank/workflow">
+
+  <process id="rdm4eyes" name="rdmmesh default 4-eyes" isExecutable="true">
+
+    <startEvent id="start"/>
+    <sequenceFlow id="f_start" sourceRef="start" targetRef="rt_await"/>
+
+    <!-- Точка ожидания: FlowableWorkflowEngine ставит переменные
+         (versionId/targetStatus/actor/baseRoles/comment) и делает trigger. -->
+    <receiveTask id="rt_await" name="await transition"/>
+    <sequenceFlow id="f_apply" sourceRef="rt_await" targetRef="svc_apply"/>
+
+    <!-- Единственная связка с бизнес-логикой: существующий WorkflowService. -->
+    <serviceTask id="svc_apply" name="apply transition"
+                 flowable:delegateExpression="${rdmTransitionDelegate}"/>
+    <sequenceFlow id="f_gw" sourceRef="svc_apply" targetRef="gw_done"/>
+
+    <exclusiveGateway id="gw_done" default="f_loop"/>
+    <sequenceFlow id="f_end" sourceRef="gw_done" targetRef="end">
+      <conditionExpression xsi:type="tFormalExpression">${terminal == true}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="f_loop" sourceRef="gw_done" targetRef="rt_await"/>
+
+    <endEvent id="end"/>
+
+  </process>
+</definitions>

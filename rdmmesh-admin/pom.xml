@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>bank.rdmmesh</groupId>
+        <artifactId>rdmmesh-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>rdmmesh-admin</artifactId>
+    <name>rdmmesh — admin (RDM_ADMIN operations: domain CRUD, ownership, resolution tasks)</name>
+    <description>
+        Bounded context для admin-facing операций (ADR-0010, E18). Владеет schema 'admin'
+        (resolution_task), но операции записи в catalog/ownership делегируются через Ports
+        (CatalogAdminPort, OwnershipAdminPort) — никаких прямых cross-module импортов,
+        ArchUnit-isolation сохранена.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>bank.rdmmesh</groupId>
+            <artifactId>rdmmesh-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.dropwizard</groupId>
+            <artifactId>dropwizard-jersey</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.dropwizard</groupId>
+            <artifactId>dropwizard-client</artifactId>
+        </dependency>
+
+        <!-- @Auth/@RolesAllowed("RDM_ADMIN") на каждом admin-эндпоинте. -->
+        <dependency>
+            <groupId>io.dropwizard</groupId>
+            <artifactId>dropwizard-auth</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jdbi</groupId>
+            <artifactId>jdbi3-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jdbi</groupId>
+            <artifactId>jdbi3-postgres</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jdbi</groupId>
+            <artifactId>jdbi3-jackson2</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jdbi</groupId>
+            <artifactId>jdbi3-sqlobject</artifactId>
+        </dependency>
+    </dependencies>
+</project>

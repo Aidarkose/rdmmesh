@@ -29,6 +29,14 @@
             <artifactId>dropwizard-client</artifactId>
         </dependency>
 
+        <!-- E17: DomainRoleDirectoryResource использует @Auth/@RolesAllowed
+             (approvers — authenticated; reload — RDM_ADMIN). Тот же приём,
+             что у rdmmesh-workflow (E5). -->
+        <dependency>
+            <groupId>io.dropwizard</groupId>
+            <artifactId>dropwizard-auth</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.jdbi</groupId>
             <artifactId>jdbi3-core</artifactId>

@@ -27,6 +27,36 @@
       "items": { "$ref": "../common/types.json#/definitions/tag" }
     },
     "key_spec": { "$ref": "key-spec.json" },
+    "references": {
+      "type": "array",
+      "description": "Cross-codeset foreign-key references. Each entry links a column of THIS CodeSet (a key part name or an attribute name) to a column of another CodeSet, so consumers (e.g. the OpenMetadata catalog) can render the relationship and join the reference tables. Backend does not enforce referential integrity in this slice; the OM ingestion source emits these as FOREIGN_KEY tableConstraints.",
+      "items": {
+        "type": "object",
+        "title": "CodeSetRef",
+        "required": ["from_column", "to_codeset_id", "to_column"],
+        "properties": {
+          "from_column": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "description": "Column on THIS CodeSet — a key part name (key_spec.parts[].name) or an attribute name (CodeSetSchema property)."
+          },
+          "to_codeset_id": {
+            "$ref": "../common/types.json#/definitions/uuid",
+            "description": "Referenced CodeSet. May live in another domain."
+          },
+          "to_column": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "description": "Column on the referenced CodeSet that from_column points at (typically its key part)."
+          },
+          "label": {
+            "$ref": "../common/types.json#/definitions/localized_label",
+            "description": "Optional human label for the relationship."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "hierarchy_mode": { "$ref": "../common/enums.json#/definitions/hierarchy_mode" },
     "release_channels": {
       "type": "array",

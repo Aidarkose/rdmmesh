@@ -17,31 +17,23 @@ import org.jdbi.v3.sqlobject.statement.SqlUpdate;
  */
 public interface DomainDao {
 
-    @SqlQuery(
-            "SELECT id, om_domain_id, name, display_name, description,"
-                    + " label_ru, label_en, tags, created_at, updated_at"
-                    + " FROM catalog.domain ORDER BY name")
+    String COLUMNS =
+            "id, om_domain_id, name, display_name, description,"
+                    + " label_ru, label_en, tags, created_at, updated_at, deleted_at";
+
+    @SqlQuery("SELECT " + COLUMNS + " FROM catalog.domain ORDER BY name")
     @RegisterConstructorMapper(DomainRow.class)
     List<DomainRow> findAll();
 
-    @SqlQuery(
-            "SELECT id, om_domain_id, name, display_name, description,"
-                    + " label_ru, label_en, tags, created_at, updated_at"
-                    + " FROM catalog.domain WHERE id = :id")
+    @SqlQuery("SELECT " + COLUMNS + " FROM catalog.domain WHERE id = :id")
     @RegisterConstructorMapper(DomainRow.class)
     Optional<DomainRow> findById(@Bind("id") UUID id);
 
-    @SqlQuery(
-            "SELECT id, om_domain_id, name, display_name, description,"
-                    + " label_ru, label_en, tags, created_at, updated_at"
-                    + " FROM catalog.domain WHERE name = :name")
+    @SqlQuery("SELECT " + COLUMNS + " FROM catalog.domain WHERE name = :name")
     @RegisterConstructorMapper(DomainRow.class)
     Optional<DomainRow> findByName(@Bind("name") String name);
 
-    @SqlQuery(
-            "SELECT id, om_domain_id, name, display_name, description,"
-                    + " label_ru, label_en, tags, created_at, updated_at"
-                    + " FROM catalog.domain WHERE om_domain_id = :omDomainId")
+    @SqlQuery("SELECT " + COLUMNS + " FROM catalog.domain WHERE om_domain_id = :omDomainId")
     @RegisterConstructorMapper(DomainRow.class)
     Optional<DomainRow> findByOmId(@Bind("omDomainId") UUID omDomainId);
 
@@ -81,6 +73,41 @@ public interface DomainDao {
             @Bind("labelEn") String labelEn,
             @Bind("tags") String[] tags);
 
+    /**
+     * UPSERT mirror'а domain'а из OM webhook'а. Идемпотентно по {@code om_domain_id}.
+     * При повторе с новыми значениями полей — UPDATE. Если deleted_at был выставлен
+     * (soft-delete), он сбрасывается в NULL — это resurrect (см. SPEC §2.4).
+     */
+    @SqlUpdate(
+            """
+            INSERT INTO catalog.domain
+                (om_domain_id, name, display_name, description, label_ru, label_en, tags)
+            VALUES
+                (:omDomainId, :name, :displayName, :description, :labelRu, :labelEn, :tags)
+            ON CONFLICT (om_domain_id) DO UPDATE
+              SET name         = EXCLUDED.name,
+                  display_name = EXCLUDED.display_name,
+                  description  = EXCLUDED.description,
+                  label_ru     = EXCLUDED.label_ru,
+                  label_en     = EXCLUDED.label_en,
+                  tags         = EXCLUDED.tags,
+                  deleted_at   = NULL,
+                  updated_at   = now()
+            """)
+    int upsertByOmId(
+            @Bind("omDomainId") UUID omDomainId,
+            @Bind("name") String name,
+            @Bind("displayName") String displayName,
+            @Bind("description") String description,
+            @Bind("labelRu") String labelRu,
+            @Bind("labelEn") String labelEn,
+            @Bind("tags") String[] tags);
+
+    @SqlUpdate(
+            "UPDATE catalog.domain SET deleted_at = now(), updated_at = now()"
+                    + " WHERE om_domain_id = :omDomainId AND deleted_at IS NULL")
+    int softDeleteByOmId(@Bind("omDomainId") UUID omDomainId);
+
     /** Snapshot строки domain'а — внутренний транспорт между DAO и mapper'ом. */
     record DomainRow(
             UUID id,
@@ -92,5 +119,6 @@ public interface DomainDao {
             String labelEn,
             String[] tags,
             Instant createdAt,
-            Instant updatedAt) {}
+            Instant updatedAt,
+            Instant deletedAt) {}
 }

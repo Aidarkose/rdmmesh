@@ -15,6 +15,7 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -128,6 +129,27 @@ public final class CodeSetResource {
                 .orElseThrow(() -> new NotFoundException("codeset " + id));
     }
 
+    /**
+     * Заменяет набор cross-codeset FK-связей справочника целиком (PUT-семантика —
+     * полная замена, не merge). Каждая связь линкует колонку этого справочника
+     * ({@code from_column} — имя key-part'а или атрибута) с колонкой другого справочника
+     * ({@code to_codeset_id} + {@code to_column}), в т.ч. в другом домене. Backend не
+     * проверяет referential integrity — связь описательна и публикуется в OpenMetadata как
+     * FOREIGN_KEY (см. om-rdmmesh-source). Пустой/отсутствующий список очищает связи.
+     */
+    @PUT
+    @Path("/{id}/references")
+    @RolesAllowed({"RDM_AUTHOR", "RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    public CodeSet putReferences(
+            @Auth RdmmeshPrincipal principal,
+            @PathParam("id") String id,
+            @Valid SetReferencesRequest req) {
+        UUID uid = CatalogMappers.parseUuid(id, "id");
+        List<ReferenceDto> refs = (req == null || req.references == null) ? List.of() : req.references;
+        return catalog.setReferences(uid, CatalogMappers.writeJson(refs))
+                .orElseThrow(() -> new NotFoundException("codeset " + id));
+    }
+
     private static java.util.Map<String, Object> defaultKeySpec() {
         // KeySpec по дефолту: одиночный код. Минимальный валидный объект для сохранения
         // в JSONB-поле, чтобы пользователь не обязательно писал key_spec вручную в pilot'е.
@@ -186,5 +208,35 @@ public final class CodeSetResource {
 
         @JsonProperty("tags")
         public String[] tags;
+    }
+
+    /** Тело {@code PUT /codesets/{id}/references} — полная замена набора связей. */
+    public static final class SetReferencesRequest {
+        @JsonProperty("references")
+        @Valid
+        public List<ReferenceDto> references;
+    }
+
+    /** Одна cross-codeset FK-связь. Сериализуется в JSONB-поле {@code column_refs}. */
+    public static final class ReferenceDto {
+        @JsonProperty("from_column")
+        @NotEmpty
+        @Pattern(regexp = "^[a-z][a-z0-9_]{0,63}$",
+                message = "from_column must be lower snake_case, ≤64 chars")
+        public String fromColumn;
+
+        @JsonProperty("to_codeset_id")
+        @NotEmpty
+        public String toCodesetId;
+
+        @JsonProperty("to_column")
+        @NotEmpty
+        @Pattern(regexp = "^[a-z][a-z0-9_]{0,63}$",
+                message = "to_column must be lower snake_case, ≤64 chars")
+        public String toColumn;
+
+        /** Опциональная человекочитаемая метка связи (localized_label {ru,en}). */
+        @JsonProperty("label")
+        public JsonNode label;
     }
 }

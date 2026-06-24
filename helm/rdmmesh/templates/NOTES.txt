@@ -1,0 +1,17 @@
+rdmmesh {{ .Chart.AppVersion }} развёрнут как {{ include "rdmmesh.fullname" . }}.
+
+  API:     https://{{ .Values.ingress.host }}/api/v1
+  Движок workflow: {{ .Values.workflow.engine }}{{ if eq .Values.workflow.engine "flowable" }}  (Flowable; схема workflow_engine — self-managed){{ end }}
+  Flyway autoMigrate: {{ .Values.flyway.autoMigrate }}
+
+Проверки:
+  kubectl exec deploy/{{ include "rdmmesh.fullname" . }} -- \
+    wget -qO- localhost:{{ .Values.service.adminPort }}/healthcheck
+
+ВНИМАНИЕ:
+  - Secret '{{ .Values.secret.existingSecret }}' должен существовать ДО
+    установки (Vault/SOPS/External Secrets) с ключами: db-password,
+    hmac-key, webhook-key, kc-client-secret (SPEC §3.7).
+  - flyway.autoMigrate={{ .Values.flyway.autoMigrate }}: см. README §Migrations
+    (prod-паритет config-prod.yml — миграции отдельным шагом).
+  - Чарт НЕ deploy-протестирован в этой сессии (нет k8s/helm) — см. README.

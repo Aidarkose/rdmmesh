@@ -16,6 +16,26 @@
     "expected_status": {
       "$ref": "../common/enums.json#/definitions/version_status",
       "description": "Optional optimistic-locking guard; the server rejects if the current status does not match."
+    },
+    "assignee": {
+      "type": "object",
+      "description": "BR-21 (handoff E17): addressed approver routing. Required when to=IN_REVIEW (submit). Author picks the domain (= the CodeSet's domain) and the specific steward + business-owner accounts (from ownership.domain_role_directory) who will review/approve this version.",
+      "javaType": "bank.rdmmesh.spec.api.TransitionAssignee",
+      "properties": {
+        "domain_id": {
+          "type": "string",
+          "description": "Domain of the CodeSet. The server validates it matches the version's CodeSet domain."
+        },
+        "steward_om_user_id": {
+          "type": "string",
+          "description": "om_user_id of the chosen STEWARD (handles IN_REVIEW -> STEWARD_APPROVED)."
+        },
+        "owner_om_user_id": {
+          "type": "string",
+          "description": "om_user_id of the chosen BUSINESS_OWNER (handles STEWARD_APPROVED -> OWNER_APPROVED)."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

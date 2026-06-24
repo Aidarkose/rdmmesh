@@ -34,6 +34,7 @@
 - Workflow согласования (4-eyes: Author → Steward → Owner → Published).
 - Локализация labels на двух языках: русский и английский.
 - Аутентификация через корпоративный AD (через Keycloak-broker), общий контур безопасности с OpenMetadata.
+- Получение информации о бизнес-доменах (название, код, описание, ownership домена) из OpenMetadata. **OM — мастер-система** по определению доменов: rdmmesh ведёт только локальный зеркальный кэш (`catalog.domain`), синхронизируемый из OM, и не позволяет создавать/редактировать домены в собственном UI.
 - Получение информации о владельцах и экспертах справочников из OpenMetadata (OM — единственный источник истины для ownership).
 - Публикация справочников для downstream-потребителей (REST API, bulk export, webhooks; Kafka в будущей версии).
 - Регистрация справочников в OpenMetadata через **ingestion-коннектор** (OM сам забирает метаданные, RDM не пушит).
@@ -89,6 +90,7 @@
 **Принцип маппинга ролей:**
 - **Базовые функциональные роли** (Author, Consumer, Schema Designer, Admin) — назначаются через AD-группы, привозятся в RDM в `groups` claim Keycloak JWT.
 - **Asset-level роли** (Owner, Expert, Steward конкретного CodeSet) — назначаются в OpenMetadata, приходят в RDM через webhook от OM Event Subscription и хранятся в таблице `rdm_asset_ownership`.
+- **Domain-level роли согласующих** (Steward и Business Owner **домена** — кандидаты, которым Author адресно отправляет draft на согласование) — берутся из **справочника ролей домена** (`domain_role_directory`, см. §2.4). Мастер-система — OpenMetadata (DG-роли governance); на текущем этапе справочник наполняется локальным сидом, позже заменяется на справочник, сгенерированный в OM. **Business Owner домена = владелец домена** в терминах OM (тот же субъект, что приходит как `OWNER` для `entityType=domain`); здесь он выступает в роли согласующего, выбираемого по домену.
 
 ### 2.2. Сквозной бизнес-процесс: жизненный цикл справочника
 
@@ -145,6 +147,16 @@
 - При reject указывается обязательный комментарий, draft возвращается Author'у.
 - При publish: предыдущая published-версия автоматически переводится в DEPRECATED с заполнением `effective_to`.
 
+**Адресная маршрутизация согласования (BR-21).** Переход `submit` (`DRAFT → IN_REVIEW`) не «вещает» задачу всем потенциальным стюардам, а **адресуется конкретному согласующему, которого выбирает Author**:
+
+1. В UI при подаче draft'а на ревью Author выбирает: **домен** → **роль согласующего** (`Steward` либо `Business Owner`) → **учётную запись** конкретного пользователя, являющегося стюардом/бизнес-владельцем этого домена.
+2. Список кандидатов для пары «домен + роль» отдаёт справочник ролей домена `domain_role_directory` (§2.4). Домен в выборе совпадает с доменом CodeSet'а; роль и учётная запись — выбор Author'а.
+3. `submit` принимает `assignee = {domain_id, role, om_user_id}`. State machine валидирует: тройка существует в `domain_role_directory`, `role ∈ {STEWARD, BUSINESS_OWNER}`, и сохраняется правило self-approval (`assignee.om_user_id ≠ created_by`).
+4. Создаётся **адресная** задача согласования: `approval_task.candidate_users = [assignee.om_user_id]` (ровно один получатель) с фиксацией выбранной роли. Она появляется в разделе **«Мои задачи»** именно у выбранного пользователя.
+5. По клику на задачу пользователь переходит на страницу draft-версии (уже реализована в UI) и выполняет `Steward approve` / `Steward reject` — обычный переход `IN_REVIEW → STEWARD_APPROVED`/`DRAFT` с правилами §3.8. Дальнейший owner-этап 4-eyes не меняется.
+
+Так адресность согласования (кто именно ревьюит) — это runtime-выбор Author'а из справочника, а не дополнительный жёстко зашитый шаг state machine.
+
 **Особый случай — Emergency hotfix** (V1+, не MVP): отдельный шаблон, разрешает Owner'у публиковать без steward_approve, но создаёт обязательную задачу пост-факт ревью.
 
 #### Этап 4. Публикация и потребление
@@ -179,9 +191,12 @@
 
 **Обязательно для MVP** из-за регуляторных требований домена Risk/IFRS9.
 
-### 2.4. Связь с OpenMetadata по ownership (ключевое решение)
+### 2.4. Связь с OpenMetadata: бизнес-домены и ownership (ключевое решение)
 
-**Принцип: слабая связанность. RDM ничего не пушит в OM активно. OM — единственный источник истины по ownership.**
+**Принцип: слабая связанность. RDM ничего не пушит в OM активно. OM — единственный источник истины (мастер-система) по двум классам сущностей:**
+
+1. **Бизнес-домены** — название, код (FQN-сегмент), описание, иерархия sub-domain'ов, owner самого домена. RDM ведёт локальный mirror (`catalog.domain`), но не создаёт и не редактирует домены в своём UI.
+2. **Ownership на data assets** — owner, steward, expert, approver конкретного CodeSet'а. RDM хранит это в `ownership.rdm_asset_ownership` тоже как mirror.
 
 #### Поток "RDM → OM" (только pull, через ingestion)
 
@@ -195,28 +210,44 @@
 #### Поток "OM → RDM" (push, через webhook)
 
 - В OM регистрируется одна **Event Subscription** с фильтром:
-  - `eventType ∈ {ENTITY_CREATED, ENTITY_UPDATED}`
-  - `entityType ∈ {table, domain}`
-  - `fields ∈ {owners, experts, reviewers}`
-  - FQN-фильтр для `table`: `rdmmesh.*`
-  - URL: `https://rdm.bank/webhooks/om/ownership`
+  - `eventType ∈ {ENTITY_CREATED, ENTITY_UPDATED, ENTITY_SOFT_DELETED}`
+  - `entityType ∈ {domain, table}`
+  - Для `table`: интересны изменения полей `owners`, `experts`, `reviewers`; FQN-фильтр `rdmmesh.*`.
+  - Для `domain`: интересны и атрибуты (`name`, `displayName`, `description`, `parent`), и `owners`/`experts`. FQN-фильтр не нужен — RDM зеркалит **все** домены OM, потому что любой из них может оказаться целевым для нового справочника.
+  - URL: `https://rdm.bank/webhooks/om/ownership` (имя сохранено для совместимости; обрабатывает оба класса событий).
   - Auth: bot-токен в `Authorization`, payload подписан HMAC.
 - Endpoint в RDM (`POST /webhooks/om/ownership`):
-  - Парсит ChangeEvent, извлекает delta по полям `owners`/`experts`/`reviewers`.
-  - Находит CodeSet по FQN или Domain по `om_domain_id`.
-  - `UPSERT INTO rdm_asset_ownership (asset_id, asset_type, om_user_id, role, assigned_at, is_provisional=false)`.
-  - Маппинг: `owners` → `OWNER`, `experts` → `EXPERT`, `reviewers` → `APPROVER` (для steward подобной семантики в OM нет — steward = expert или отдельная политика).
-  - Инвалидирует permission cache.
+  - **Если `entityType=domain`** — `UPSERT INTO catalog.domain (om_domain_id, name, display_name, description, label_ru, label_en, tags)`. Soft-delete переводит `deleted_at`, не удаляет физически (downstream-CodeSet'ы могут на него ссылаться).
+  - **Если `entityType=table` (FQN `rdmmesh.*`)** — парсит ChangeEvent, извлекает delta по полям `owners`/`experts`/`reviewers`, делает `UPSERT INTO rdm_asset_ownership (asset_id, asset_type, om_user_id, role, assigned_at, is_provisional=false)`. Маппинг: `owners` → `OWNER`, `experts` → `EXPERT`, `reviewers` → `APPROVER` (для steward подобной семантики в OM нет — steward = expert или отдельная политика).
+  - Любой обработанный event идемпотентен по `source_event_id` и инвалидирует permission cache.
 
 #### Bootstrap-период (CodeSet создан, ingestion ещё не прошёл)
 
-1. Author создаёт CodeSet `IFRS9 Stages` в RDM. Поле owner в форме отсутствует — единственный источник OM.
+1. Author создаёт CodeSet `IFRS9 Stages` в RDM, выбирая Domain из локального mirror'а `catalog.domain` (заполненного предыдущим domain-webhook'ом OM). Поле owner в форме отсутствует — единственный источник OM.
 2. RDM создаёт **provisional owner**: `INSERT INTO rdm_asset_ownership (..., om_user_id=<creator>, role=OWNER, is_provisional=true)`.
 3. Через час ingestion забирает CodeSet, создаёт Table в OM без owner.
 4. Кто-то в OM назначает реального owner.
 5. RDM получает webhook → `UPSERT` овnership с `is_provisional=false`.
 6. В UI RDM, пока owner provisional — баннер «Owner не утверждён в OpenMetadata, действует временное назначение».
 7. Publish **не блокируется** на provisional-период (нельзя останавливать банковские процессы на задержке ingestion), но в audit фиксируется `owner_was_provisional=true`.
+
+#### Bootstrap-период для домена (домен ещё не пришёл из OM)
+
+Аналогично, но реже: на самом старте внедрения, когда webhook OM ещё не настроен либо ни одного relevant domain-event ещё не пришло, mirror `catalog.domain` пуст, и Author не может выбрать domain при создании CodeSet'а.
+
+- В этот период `RDM_ADMIN` имеет доступ к **bootstrap REST**: `POST /api/v1/domains` принимает `om_domain_id`, `name`, `display_name`, по которым в `catalog.domain` создаётся mirror-row. Это техническая мера: **в нормальной операции** `RDM_ADMIN` доменом не управляет, всё течёт из OM.
+- Идемпотентность по `om_domain_id` гарантирует, что последующий webhook от OM с тем же `om_domain_id` корректно "поглотит" bootstrap-row через UPSERT, не создав дубликата.
+- Как только webhook'и стабильно работают, bootstrap-endpoint можно отключить feature-флагом или ограничить ролью только в нон-prod-средах.
+
+#### Справочник ролей домена (`domain_role_directory`) — адресная маршрутизация согласования
+
+Для адресной маршрутизации согласования (§2.2, BR-21) RDM ведёт **отдельный справочник ролей домена**: `домен → роль(STEWARD | BUSINESS_OWNER) → учётная запись`. Это **не** `rdm_asset_ownership` (тот — per-CodeSet, дельта-UPSERT по webhook'у §2.4) и не `catalog.domain` — это самостоятельный домен-скоупный справочник кандидатов-согласующих.
+
+- **Мастер-система — OpenMetadata.** OM — источник истины по DG-ролям (steward/business-owner доменов). Справочник в RDM — производная (mirror) этого источника.
+- **Текущий этап — локальный сид.** Пока в OM не сгенерирован соответствующий справочник, `domain_role_directory` наполняется **локальным сидом** RDM (см. E17). Контракт потребителей (UI выбора согласующего, state machine) от источника не зависит — позже сид заменяется на справочник, сгенерированный в OM, без изменений downstream.
+- **Семантика обновления — полная замена (TRUNCATE + INSERT).** Обновление справочника на стороне RDM — это **очистка (`TRUNCATE`) старых записей и запись данных из нового справочника** одной транзакцией (атомарная подмена снапшота). Дельта-UPSERT здесь сознательно не применяется: справочник целиком приходит от мастер-системы как готовый снапшот. Этим он отличается от `rdm_asset_ownership`, где webhook OM присылает инкрементальные изменения.
+- **`BUSINESS_OWNER` = владелец домена** (тот же субъект, что приходит как OM-owner для `entityType=domain`); в контексте маршрутизации он — выбираемый по домену согласующий, а не отдельная новая governance-роль.
+- Запись справочника денормализует `username`/`display_name`, чтобы UI строил список согласующих без синхронного обращения к OM (принцип §3.2 п.4 — слабая связанность).
 
 #### Маппинг идентификаторов
 
@@ -239,6 +270,7 @@
 | BR-09 | Локализация labels CodeItem (ru + en) | Постановка | MUST |
 | BR-10 | Аутентификация через корпоративный AD, общий контур с OM | Постановка | MUST |
 | BR-11 | Owner/Expert/Approver справочников приходят из OpenMetadata, не дублируются в RDM | Постановка | MUST |
+| BR-11a | Бизнес-домены (название, код, описание, ownership домена) — мастер-данные OpenMetadata; rdmmesh ведёт только локальный зеркальный кэш, синхронизируемый через webhook от OM | Постановка | MUST |
 | BR-12 | OM узнаёт о справочниках через ingestion (pull-модель) | Постановка | MUST |
 | BR-13 | REST API для consumer'ов (read-only) с поддержкой `as_of` параметров | Распределение | MUST |
 | BR-14 | Bulk export (CSV/XLSX/JSON/Parquet) | Распределение | SHOULD |
@@ -248,6 +280,8 @@
 | BR-18 | Custom BPMN workflow templates per Domain | — | COULD (V2+) |
 | BR-19 | Kafka outbound для streaming consumers | — | COULD (V2+) |
 | BR-20 | UI визуально согласован с OpenMetadata | Постановка | SHOULD |
+| BR-21 | Адресная маршрутизация согласования: Author при `submit` выбирает домен + роль (Steward/Business Owner) + конкретную учётную запись согласующего из справочника ролей домена; задача адресно появляется в «Мои задачи» выбранного пользователя | Постановка | MUST |
+| BR-22 | Справочник ролей домена (`домен→роль→учётка`) — мастер OpenMetadata; на старте локальный сид, обновление полной заменой (TRUNCATE+INSERT) | Постановка | MUST |
 
 ---
 
@@ -309,7 +343,7 @@
 ### 3.4. Доменная модель (ядро)
 
 ```
-Domain (FK→om_domain_id, mirror из OM по ingestion-обратному pull, либо ENTERPRISE)
+Domain (FK→om_domain_id; mirror из OpenMetadata, синхронизируется push-webhook'ом OM, см. §2.4)
   └── CodeSet                        «country_iso», «ifrs9_stages», «position_system_matrix»
         ├── CodeSetSchema            JSON Schema атрибутов CodeItem
         ├── KeySpec                  одиночный код или composite (key_part_1..key_part_n)
@@ -334,6 +368,12 @@ Domain (FK→om_domain_id, mirror из OM по ingestion-обратному pull
                     ├── order_index
                     ├── status       ACTIVE | RETIRED
                     └── effective_from, effective_to
+
+DomainRoleDirectory (справочник ролей домена, §2.4 — мастер OM, локальный сид сейчас)
+  └── (domain_id, role ∈ {STEWARD, BUSINESS_OWNER}, om_user_id, username, display_name, source, loaded_at)
+        обновление — полная замена (TRUNCATE + INSERT) одной транзакцией
+ApprovalTask (workflow)
+  └── при адресном submit: candidate_users = [assignee.om_user_id], assigned_role ∈ {STEWARD, BUSINESS_OWNER}
 ```
 
 #### Иерархии
@@ -391,9 +431,21 @@ GET    /versions/{version_id}/diff?from={ver}      diff с другой верс
 #### Workflow
 
 ```
-POST   /versions/{version_id}/transitions          { "to": "IN_REVIEW", "comment": "..." }
+POST   /versions/{version_id}/transitions          { "to": "IN_REVIEW", "comment": "...",
+                                                     "assignee": { "domain_id": "...",
+                                                                   "role": "STEWARD|BUSINESS_OWNER",
+                                                                   "om_user_id": "..." } }
+                                                   assignee обязателен при to=IN_REVIEW (BR-21):
+                                                   тройка валидируется по domain_role_directory,
+                                                   self-approval check (assignee ≠ created_by)
 GET    /versions/{version_id}/history              история переходов статусов
-GET    /tasks/my                                   мои задачи на ревью/approve
+GET    /tasks/my                                   мои задачи на ревью/approve (адресные)
+GET    /domains/{domain}/approvers?role=STEWARD|BUSINESS_OWNER
+                                                   кандидаты-согласующие домена
+                                                   из domain_role_directory (для UI submit)
+POST   /admin/domain-role-directory:reload         RDM_ADMIN; тело — полный снапшот справочника;
+                                                   применяется как TRUNCATE + INSERT (полная замена);
+                                                   источник — локальный сид сейчас, OM-генерация позже
 ```
 
 #### Distribution (read-only, для consumer'ов)
@@ -605,11 +657,31 @@ om-rdmmesh-source/
 **Решение:** `code_item.key_parts JSONB` (массив значений ключевых частей). KeySpec в CodeSet описывает имена и типы частей.
 **Обоснование:** Универсальная модель, перекрывает одиночные ключи (массив длины 1) и матрицы.
 
-#### ADR-008. Owner назначается в OM, не в RDM
+#### ADR-008. Бизнес-домены и ownership — мастер в OpenMetadata, не в RDM
 
-**Контекст:** OM — единственный источник истины по ownership.
-**Решение:** В форме создания CodeSet нет поля owner. Provisional owner = создатель. Реальный owner приходит через webhook.
-**Trade-off:** UX-неудобство в bootstrap-периоде — компенсируется баннером и отсутствием блокировки publish.
+**Контекст:** OM — корпоративный governance hub. Бизнес-домены (со своими названиями, кодами, иерархией, владельцами) и ownership на data assets живут в OM. RDM как lifecycle-инструмент справочников не должен дублировать определение этих сущностей — иначе появятся два источника истины с расхождениями.
+
+**Решение:**
+- В UI RDM нет экранов создания/редактирования domain'а или назначения owner'а.
+- `catalog.domain` — асинхронный mirror, заполняется webhook'ом OM Event Subscription для `entityType=domain`.
+- `ownership.rdm_asset_ownership` — асинхронный mirror, заполняется webhook'ом для `entityType=table` (FQN `rdmmesh.*`).
+- В форме создания CodeSet нет полей owner (provisional = creator) и domain свободного ввода (выбор только из mirror'а). Реальный owner приходит позже через webhook.
+- Bootstrap-режим (только `RDM_ADMIN`, см. §2.4): техническая мера до выхода webhook-канала на стационарный режим; идемпотентен с последующим OM-webhook'ом по `om_domain_id`.
+
+**Trade-off:** UX-неудобство в bootstrap-периоде (новый domain в OM появляется в RDM только после webhook'а, типичная задержка — секунды) — компенсируется баннером и отсутствием блокировки publish'а на provisional-owner'е.
+
+#### ADR-009. Справочник ролей домена — отдельный full-replace mirror, источник абстрагирован
+
+**Контекст:** Адресная маршрутизация согласования (BR-21) требует домен-скоупного списка кандидатов «steward/business-owner домена». Источник истины — OM (DG-роли), но на момент внедрения соответствующий справочник в OM ещё не сгенерирован.
+
+**Решение:**
+- Отдельная таблица `domain_role_directory` (не `rdm_asset_ownership`, не `catalog.domain`).
+- Семантика обновления — **полная замена** `TRUNCATE + INSERT` одной транзакцией (снапшот от мастера), а не дельта-UPSERT как у webhook-mirror'а §2.4.
+- Единая точка наполнения (reload-эндпоинт/джоба) с абстрагированным источником: сейчас локальный сид RDM, позже — справочник, сгенерированный в OM. Downstream-потребители (UI выбора согласующего, state machine) к источнику не привязаны.
+
+**Обоснование:** Не блокировать BR-21 на готовность OM-генерации; не смешивать full-replace снапшот-семантику с инкрементальным webhook-каналом E7 (разные модели консистентности → разные таблицы). Замена источника — смена реализации reload без рефакторинга бизнес-логики (тот же принцип Ports & Adapters, §3.2).
+
+**Trade-off:** До перехода на OM-генерацию справочник ведётся вручную (локальный сид) — устаревание митигируется тем, что reload идемпотентен и полностью замещает данные при каждом прогоне.
 
 ### 4.4. Маппинг бизнес-сценариев на архитектуру
 
@@ -626,6 +698,15 @@ om-rdmmesh-source/
 9. Publishing создаёт snapshot, считает content_hash, подписывает HMAC, эмитит событие.
 10. OutboundPort рассылает webhook в Risk-engine. Audit-запись.
 11. В следующий цикл ingestion (час) OM забирает обновлённый CodeSet, обновляет Table.
+
+#### Сценарий «Создан новый бизнес-домен в OpenMetadata»
+
+1. Data Governance team в UI OpenMetadata создаёт Domain `treasury` (name=`treasury`, displayName=`Treasury Department`, owner=@ivanov).
+2. OM эмитит `ENTITY_CREATED { entityType: domain, fqn: "treasury", name, displayName, description, owners: [ivanov], ... }`.
+3. OM Event Subscription пушит JSON в `https://rdm.bank/webhooks/om/ownership`.
+4. RDM ownership-модуль валидирует HMAC, парсит payload, видит `entityType=domain`.
+5. `UPSERT INTO catalog.domain (om_domain_id, name, display_name, description, ...)`. В этой же транзакции `UPSERT INTO rdm_asset_ownership (asset_id=domain_id, asset_type=DOMAIN, om_user_id=ivanov_uuid, role=OWNER)`.
+6. Через несколько секунд новый domain появляется в выпадающем списке формы «Создать CodeSet» — Author из домена Treasury может начать заводить справочники.
 
 #### Сценарий «Назначен новый Domain Owner для домена Risk»
 
@@ -659,6 +740,7 @@ om-rdmmesh-source/
 | **E12. Ingestion-коннектор** | Python пакет `om-rdmmesh-source`, маппинг в OM Tables, тесты | E3 (REST API стабильно) |
 | **E13. Bitemporal & Hierarchy** | Closure table, GiST-индексы, API параметры `as_of`/`knowledge_as_of`, иерархический tree-редактор | E4, E8, E11 |
 | **E14. Compliance hardening** | Audit-export, verify-endpoint для подписи, no-bypass проверки, security review | E6, E10 |
+| **E17. Адресная маршрутизация согласования** | `domain_role_directory` (мастер OM, локальный сид; refresh = TRUNCATE+INSERT), `submit` с `assignee`, адресная `approval_task`, UI выбора согласующего, эндпоинты approvers/reload (BR-21, BR-22) | E5, E7, E11 |
 
 ### 5.2. Поэтапная дорожная карта
 
@@ -686,7 +768,7 @@ om-rdmmesh-source/
 
 #### V1 (+3 месяца) — масштабирование на Security и enterprise
 
-Эпики: E8 (distribution с as_of), E9 (outbound), E12 (ingestion в OM), E13 (полная иерархия с UI), bulk-операции из BR-16, оставшиеся справочники IFRS9, подключение домена Security/Access Matrix.
+Эпики: E8 (distribution с as_of), E9 (outbound), E12 (ingestion в OM), E13 (полная иерархия с UI), **E17 (адресная маршрутизация согласования — BR-21/BR-22, критично при >1 домене)**, bulk-операции из BR-16, оставшиеся справочники IFRS9, подключение домена Security/Access Matrix.
 
 Артефакты:
 - Полный `om-rdmmesh-source` коннектор, развёрнут в OM Airflow.

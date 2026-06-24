@@ -1,5 +1,7 @@
 package bank.rdmmesh.api.port;
 
+import org.jdbi.v3.core.Handle;
+
 import bank.rdmmesh.spec.events.VersionPublishedEvent;
 
 /**
@@ -14,4 +16,12 @@ public interface OutboundPort {
      * background worker drains the outbox with at-least-once + idempotent semantics.
      */
     void enqueueVersionPublished(VersionPublishedEvent event);
+
+    /**
+     * E14 round 5.1 — Handle-overload. PublishingService.autoPublish использует
+     * его, чтобы outbox INSERT попал в одну Postgres tx с publish/deprecate/journal.
+     * Закрывает split-tx (handoff E6 §3 #1 / E9 §3 #3): теперь либо все операции
+     * commit'нуты, либо ни одна (rollback на любом сбое).
+     */
+    void enqueueVersionPublished(Handle handle, VersionPublishedEvent event);
 }

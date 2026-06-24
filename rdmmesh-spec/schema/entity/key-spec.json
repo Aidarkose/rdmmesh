@@ -27,6 +27,16 @@
             "type": "array",
             "description": "Closed set of permitted values for ENUM-typed parts.",
             "items": { "type": "string" }
+          },
+          "label_codeset_ref": {
+            "type": "object",
+            "title": "LabelCodesetRef",
+            "description": "E20 — display-only cross-codeset reference. UI joins this part's value against key_parts[0] of the referenced CodeSet's current published version to enrich labels (e.g., '1 — 0 дней'). NOT validated by backend in Slice A.",
+            "required": ["codeset_id"],
+            "properties": {
+              "codeset_id": { "$ref": "../common/types.json#/definitions/uuid" }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false

@@ -97,6 +97,8 @@ flyway:
     - identity
     - ownership
     - audit
+    # E18 (ADR-0010): bounded context для RDM_ADMIN-операций (resolution_task).
+    - admin
   locations:
     - classpath:db/migration/_init
     - classpath:db/migration/catalog
@@ -106,6 +108,7 @@ flyway:
     - classpath:db/migration/identity
     - classpath:db/migration/ownership
     - classpath:db/migration/audit
+    - classpath:db/migration/admin
 
 keycloak:
   issuerUri:     ${RDM_KC_ISSUER_URI}

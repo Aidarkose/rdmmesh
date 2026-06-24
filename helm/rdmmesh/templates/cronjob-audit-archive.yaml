@@ -1,0 +1,47 @@
+{{- if .Values.cronjobs.auditArchive.enabled }}
+{{- /* Точная семантика (verify + guarded drop вне retention) —
+       docs/runbooks/audit-archive.md. Здесь — каркас: token →
+       POST /audit/archive за ПРОШЛЫЙ месяц. */ -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "rdmmesh.fullname" . }}-audit-archive
+  labels: {{- include "rdmmesh.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cronjobs.auditArchive.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: audit-archive
+              image: {{ .Values.cronjobs.toolImage }}
+              env:
+                - name: KC_TOKEN_URL
+                  value: {{ .Values.cronjobs.keycloakTokenUrl | quote }}
+                - name: KC_CLIENT_ID
+                  value: {{ .Values.cronjobs.serviceAccountClientId | quote }}
+                - name: KC_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef: { name: {{ include "rdmmesh.secretName" . }}, key: kc-client-secret }
+                - name: SVC
+                  value: "http://{{ include "rdmmesh.fullname" . }}:{{ .Values.service.httpPort }}/api/v1"
+              command: ["/bin/sh","-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  Y=$(date -u -d 'last month' +%Y); M=$(date -u -d 'last month' +%-m)
+                  TOK=$(curl -fsS -XPOST "$KC_TOKEN_URL" \
+                    -d grant_type=client_credentials \
+                    -d client_id="$KC_CLIENT_ID" -d client_secret="$KC_CLIENT_SECRET" \
+                    | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+                  curl -fsS -XPOST -H "Authorization: Bearer $TOK" \
+                    "$SVC/audit/archive?year=$Y&month=$M"
+                  curl -fsS -H "Authorization: Bearer $TOK" \
+                    "$SVC/audit/archive/audit_log_y${Y}m$(printf '%02d' "$M")/verify"
+{{- end }}

@@ -17,6 +17,7 @@ import bank.rdmmesh.catalog.internal.dao.DomainDao.DomainRow;
 import bank.rdmmesh.catalog.resource.CodeSetSchemaDto;
 import bank.rdmmesh.spec.entity.CodeSet;
 import bank.rdmmesh.spec.entity.CodeSet.HierarchyMode;
+import bank.rdmmesh.spec.entity.CodeSetRef;
 import bank.rdmmesh.spec.entity.CodeSetVersion.ReleaseChannel;
 import bank.rdmmesh.spec.entity.Domain;
 import bank.rdmmesh.spec.entity.KeySpec;
@@ -33,14 +34,27 @@ import com.fasterxml.jackson.core.type.TypeReference;
  */
 public final class CatalogMappers {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    // FAIL_ON_UNKNOWN_PROPERTIES=false — forward-compat: новые опциональные поля
+    // в schemas (например, E20 label_codeset_ref) не должны ломать чтение
+    // существующих CodeSet'ов до перегенерации POJO. Codegen всё равно обновит
+    // POJO на следующем mvn compile, но сценарий «backend поднят на старой
+    // сборке, а UI уже пишет новые поля» теперь безопасен.
+    private static final ObjectMapper JSON =
+            new ObjectMapper()
+                    .configure(
+                            com.fasterxml.jackson.databind.DeserializationFeature
+                                    .FAIL_ON_UNKNOWN_PROPERTIES,
+                            false);
 
     private CatalogMappers() {}
 
     public static Domain toDomain(DomainRow row) {
         Domain d = new Domain();
         d.setId(row.id().toString());
-        d.setOmDomainId(row.omDomainId().toString());
+        // E18 (ADR-0011): RDM-локальные домены (master=RDM) не имеют om_domain_id —
+        // он NULL до явной линковки с OM. Старый маппер звал .toString() безусловно
+        // и падал NPE на таких строках, валя GET /domains для всех пользователей.
+        d.setOmDomainId(row.omDomainId() == null ? null : row.omDomainId().toString());
         d.setName(row.name());
         d.setDisplayName(row.displayName());
         d.setDescription(row.description());
@@ -61,6 +75,7 @@ public final class CatalogMappers {
         cs.setLabels(toLabels(row.labelRu(), row.labelEn()));
         cs.setTags(toList(row.tags()));
         cs.setKeySpec(parseKeySpec(row.keySpecJson()));
+        cs.setReferences(parseReferences(row.columnRefsJson()));
         cs.setHierarchyMode(HierarchyMode.fromValue(row.hierarchyMode()));
         cs.setReleaseChannels(parseChannels(row.releaseChannels()));
         cs.setSchemaVersion(row.schemaVersion());
@@ -108,6 +123,17 @@ public final class CatalogMappers {
             return JSON.readValue(json, KeySpec.class);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Cannot parse stored key_spec JSON: " + json, e);
+        }
+    }
+
+    /** Парсит JSONB-массив column_refs в список {@link CodeSetRef}. NULL/"[]"/"" → пустой список. */
+    private static List<CodeSetRef> parseReferences(String json) {
+        if (json == null || json.isBlank()) return new ArrayList<>();
+        try {
+            List<CodeSetRef> refs = JSON.readValue(json, new TypeReference<List<CodeSetRef>>() {});
+            return refs == null ? new ArrayList<>() : refs;
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Cannot parse stored column_refs JSON: " + json, e);
         }
     }
 

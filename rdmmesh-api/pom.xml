@@ -27,5 +27,16 @@
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
         </dependency>
+
+        <!-- E14 round 5: VersionLifecyclePort.transition имеет overload, принимающий
+             org.jdbi.v3.core.Handle для atomic shared-tx с workflow-INSERT'ами
+             (см. VersionLifecyclePort javadoc и handoff E14.5). Это трактуется
+             как корпоративный transactional primitive — аналог JTA TransactionStatus
+             в Spring. Альтернатива (отдельный TxHandle-абстракция) — overkill для
+             одного use-case'а; если adapter'ов появится больше, рефакторим. -->
+        <dependency>
+            <groupId>org.jdbi</groupId>
+            <artifactId>jdbi3-core</artifactId>
+        </dependency>
     </dependencies>
 </project>

@@ -187,6 +187,21 @@ public final class CatalogService {
         });
     }
 
+    /**
+     * Заменяет набор cross-codeset FK-связей справочника целиком. {@code columnRefsJson} —
+     * сырой JSON-массив (см. spec entity/code-set.json#/properties/references), который
+     * service пишет в JSONB-поле {@code column_refs} как есть. Возвращает обновлённый CodeSet
+     * или empty, если справочник не найден / soft-deleted.
+     */
+    public Optional<CodeSet> setReferences(UUID id, String columnRefsJson) {
+        return jdbi.inTransaction(handle -> {
+            CodeSetDao dao = handle.attach(CodeSetDao.class);
+            int n = dao.updateReferences(id, columnRefsJson == null ? "[]" : columnRefsJson);
+            if (n == 0) return Optional.<CodeSet>empty();
+            return dao.findById(id).map(CatalogMappers::toCodeSet);
+        });
+    }
+
     // ── CodeSetSchema ───────────────────────────────────────────────────────────
 
     /** Возвращает текущую (active) версию схемы. */

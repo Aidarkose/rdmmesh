@@ -1,0 +1,35 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "rdmmesh.fullname" . }}
+  labels: {{- include "rdmmesh.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.ingress.securityHeaders }}
+    # E14.8 §3 #2 — целевой security-набор (frame-ancestors только
+    # заголовком, не <meta>). CSP с nonce — V1+ (нужен per-request nonce из
+    # приложения; здесь baseline под API + AntD CSS-in-JS UI за тем же host).
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' {{ .Values.keycloak.issuerUri }}; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+      more_set_headers "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Referrer-Policy: no-referrer";
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "rdmmesh.fullname" . }}
+                port: { name: http }
+{{- end }}

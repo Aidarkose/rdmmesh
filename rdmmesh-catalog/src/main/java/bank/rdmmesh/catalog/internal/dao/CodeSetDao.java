@@ -22,6 +22,7 @@ public interface CodeSetDao {
     String COLUMNS =
             "id, domain_id, name, display_name, description,"
                     + " label_ru, label_en, tags, key_spec::text AS key_spec_json,"
+                    + " column_refs::text AS column_refs_json,"
                     + " hierarchy_mode, release_channels, schema_version,"
                     + " current_published_version, created_at, created_by, updated_at, deleted_at";
 
@@ -94,6 +95,18 @@ public interface CodeSetDao {
                     + " WHERE id = :id AND deleted_at IS NULL")
     int softDelete(@Bind("id") UUID id);
 
+    /**
+     * Заменяет весь набор cross-codeset FK-связей справочника. {@code columnRefsJson} — это
+     * JSON-массив объектов {@code {from_column, to_codeset_id, to_column, label?}} (см.
+     * spec entity/code-set.json#/properties/references). Связи описательны: referential
+     * integrity на уровне БД не проверяется (цель может быть в другом домене).
+     */
+    @SqlUpdate(
+            "UPDATE catalog.code_set"
+                    + " SET column_refs = CAST(:columnRefsJson AS jsonb), updated_at = now()"
+                    + " WHERE id = :id AND deleted_at IS NULL")
+    int updateReferences(@Bind("id") UUID id, @Bind("columnRefsJson") String columnRefsJson);
+
     record CodeSetRow(
             UUID id,
             UUID domainId,
@@ -104,6 +117,7 @@ public interface CodeSetDao {
             String labelEn,
             String[] tags,
             String keySpecJson,
+            String columnRefsJson,
             String hierarchyMode,
             String[] releaseChannels,
             Integer schemaVersion,

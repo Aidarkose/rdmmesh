@@ -15,6 +15,30 @@ CONTAINER_HOME="/tmp/rdmmesh-home"
 
 mkdir -p "${M2_CACHE}"
 
+# E14 round 9: чтобы Testcontainers-IT (*IT.java, failsafe) работали изнутри
+# dockerized-Maven, пробрасываем Docker-сокет (sibling-контейнеры на хост-демоне)
+# + host-сеть (mapped-порты testcontainers'ов доступны как localhost) +
+# --group-add docker-gid (сокет root:docker 660 — иначе permission denied при
+# -u). Если сокета нет — обычный режим (IT упадут на отсутствии Docker;
+# используйте `-DskipITs`, как CI validate-job).
+DOCKER_FLAGS=()
+DOCKER_SOCK="${DOCKER_SOCK:-/var/run/docker.sock}"
+if [ -S "${DOCKER_SOCK}" ]; then
+    DOCKER_FLAGS+=(
+        -v "${DOCKER_SOCK}:/var/run/docker.sock"
+        --network host
+        --group-add "$(stat -c %g "${DOCKER_SOCK}")"
+        # Testcontainers с host-сетью + unix-сокетом резолвит контейнеры как localhost.
+        -e TESTCONTAINERS_HOST_OVERRIDE="${TESTCONTAINERS_HOST_OVERRIDE:-localhost}"
+        # Явный DOCKER_HOST → Testcontainers берёт env-стратегию вместо авто-probe
+        # (на Docker-Desktop/WSL2 авто-probe ловит desktop-stub /info → 400).
+        -e DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
+        # Ryuk на Docker-Desktop-проксе часто не стартует; в dev допустимо
+        # (контейнеры всё равно --rm; reaper не критичен для CI-less прогона).
+        -e TESTCONTAINERS_RYUK_DISABLED="${TESTCONTAINERS_RYUK_DISABLED:-true}"
+    )
+fi
+
 exec docker run --rm \
     -u "$(id -u):$(id -g)" \
     -v "${REPO_ROOT}:/workspace" \
@@ -23,5 +47,6 @@ exec docker run --rm \
     -e HOME="${CONTAINER_HOME}" \
     -e MAVEN_CONFIG="${CONTAINER_HOME}/.m2" \
     -e MAVEN_OPTS="${MAVEN_OPTS:--Xmx1g}" \
+    "${DOCKER_FLAGS[@]}" \
     "${MAVEN_IMAGE}" \
     mvn "$@"

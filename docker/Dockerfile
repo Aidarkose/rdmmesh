@@ -20,6 +20,7 @@ COPY rdmmesh-distribution/pom.xml rdmmesh-distribution/pom.xml
 COPY rdmmesh-identity/pom.xml     rdmmesh-identity/pom.xml
 COPY rdmmesh-ownership/pom.xml    rdmmesh-ownership/pom.xml
 COPY rdmmesh-audit/pom.xml        rdmmesh-audit/pom.xml
+COPY rdmmesh-admin/pom.xml        rdmmesh-admin/pom.xml
 COPY rdmmesh-app/pom.xml          rdmmesh-app/pom.xml
 
 # Pre-warm the dependency cache (best-effort — `go-offline` is not perfect for
@@ -38,6 +39,7 @@ COPY rdmmesh-distribution/src      rdmmesh-distribution/src
 COPY rdmmesh-identity/src          rdmmesh-identity/src
 COPY rdmmesh-ownership/src         rdmmesh-ownership/src
 COPY rdmmesh-audit/src             rdmmesh-audit/src
+COPY rdmmesh-admin/src             rdmmesh-admin/src
 COPY rdmmesh-app/src               rdmmesh-app/src
 COPY bootstrap                     bootstrap
 
