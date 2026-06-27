@@ -106,7 +106,7 @@ final class AtomicRollbackIT extends PostgresIT {
         }
 
         assertThatThrownBy(() ->
-                        ws.transition(v, "IN_REVIEW", actor, Set.of("RDM_AUTHOR"), null))
+                        ws.transition(v, "IN_REVIEW", actor, Set.of("RDM_STEWARD"), null))
                 .isInstanceOf(RuntimeException.class);
 
         // Полный rollback: ни одна из трёх операций не зафиксирована.
@@ -120,7 +120,7 @@ final class AtomicRollbackIT extends PostgresIT {
         try (Connection c = adminConnection(); Statement st = c.createStatement()) {
             st.execute("DROP TRIGGER it_fault_trg ON workflow.workflow_transition");
         }
-        ws.transition(v, "IN_REVIEW", actor, Set.of("RDM_AUTHOR"), null);
+        ws.transition(v, "IN_REVIEW", actor, Set.of("RDM_STEWARD"), null);
 
         assertThat(status(v)).isEqualTo("IN_REVIEW");
         assertThat(count("SELECT count(*) FROM workflow.workflow_transition "

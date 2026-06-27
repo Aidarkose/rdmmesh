@@ -73,7 +73,7 @@ import org.slf4j.LoggerFactory;
  */
 @Path("/audit")
 @Produces(MediaType.APPLICATION_JSON)
-@RolesAllowed({"RDM_ADMIN", "RDM_AUDITOR"})
+@RolesAllowed({"RDM_ADMIN"})
 public final class AuditResource {
 
     private static final int DEFAULT_SIZE = 50;

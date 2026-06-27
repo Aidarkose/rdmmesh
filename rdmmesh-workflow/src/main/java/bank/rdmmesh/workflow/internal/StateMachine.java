@@ -129,12 +129,12 @@ public final class StateMachine {
 
         switch (spec.kind()) {
             case SUBMIT -> {
-                // Submit делает Author. Проверка: либо актор — это создатель draft'а,
-                // либо у актора есть base RDM_AUTHOR/RDM_ADMIN.
+                // Submit делает Steward (бывший author). Проверка: либо актор — создатель
+                // draft'а, либо у актора есть base RDM_STEWARD/RDM_ADMIN.
                 if (!req.actor().equals(req.createdBy())
-                        && !hasAny(req.baseRoles(), "RDM_AUTHOR", "RDM_ADMIN")) {
+                        && !hasAny(req.baseRoles(), "RDM_STEWARD", "RDM_ADMIN")) {
                     throw new InsufficientRoleException(
-                            "submit разрешён только автору draft'а или RDM_AUTHOR/RDM_ADMIN");
+                            "submit разрешён только автору draft'а или RDM_STEWARD/RDM_ADMIN");
                 }
             }
             case STEWARD -> {

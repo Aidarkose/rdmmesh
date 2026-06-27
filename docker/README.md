@@ -3,7 +3,7 @@
 ## Что запускается
 
 - **postgres** — `postgres:16-alpine` с инит-скриптом `postgres/init/00-create-app-role.sql`, создающим runtime-роль `rdmmesh_app`. Схемы и таблицы создаст Flyway при первом запуске сервиса.
-- **keycloak** — `quay.io/keycloak/keycloak:26.0` в режиме `start-dev --import-realm`. На boot импортирует realm `bank` из `keycloak/realms/realm-bank.json` (clients `rdmmesh-backend` и `rdmmesh-ui`, group'ы `RDM_*`, тестовые пользователи `dev-admin`/`dev-author`/`dev-steward`/`dev-owner` с паролем `dev`). Слушает 8090 на хосте.
+- **keycloak** — `quay.io/keycloak/keycloak:26.0` в режиме `start-dev --import-realm`. На boot импортирует realm `bank` из `keycloak/realms/realm-bank.json` (clients `rdmmesh-backend` и `rdmmesh-ui`; group'ы только `RDM_STEWARD`/`RDM_OWNER`/`RDM_VIEWER`/`RDM_ADMIN`; default-группа `RDM_VIEWER`). У каждого пользователя зафиксирован `id` (sub) и задан атрибут `objectGUID` → claim `oid` (dev-симуляция AD; в проде `oid` приходит из LDAP attribute mapper). Тестовые пользователи `dev-*` и `marat.suleimenov`/`aigerim.bekova`/… с паролем `dev`. Слушает 8090 на хосте.
 - **rdmmesh-service** — multi-stage сборка по `Dockerfile`. Слушает 8080 (API) и 8081 (admin/healthcheck). Через env-vars знает про Keycloak issuer/JWKS и (опционально) про OpenMetadata REST.
 
 ## Команды

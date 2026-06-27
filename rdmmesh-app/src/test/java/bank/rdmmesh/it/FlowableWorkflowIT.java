@@ -176,7 +176,7 @@ final class FlowableWorkflowIT extends PostgresIT {
         try {
             FlowableWorkflowEngine engine = ctx.engine();
 
-            engine.transition(v, "IN_REVIEW", author, Set.of("RDM_AUTHOR"), null);
+            engine.transition(v, "IN_REVIEW", author, Set.of("RDM_STEWARD"), null);
             assertThat(status(v)).isEqualTo("IN_REVIEW");
 
             // Self-approval: автор пробует steward_approve → StateMachine
@@ -207,7 +207,7 @@ final class FlowableWorkflowIT extends PostgresIT {
         UUID v = seedDraft(author, "orph").versionId();
         Ctx ctx = buildCtx();
         try {
-            ctx.engine().transition(v, "IN_REVIEW", author, Set.of("RDM_AUTHOR"), null);
+            ctx.engine().transition(v, "IN_REVIEW", author, Set.of("RDM_STEWARD"), null);
             assertThat(ctx.manager().runtimeService().createProcessInstanceQuery()
                     .processInstanceBusinessKey(v.toString()).count())
                     .as("инстанс поднят").isEqualTo(1);
@@ -245,7 +245,7 @@ final class FlowableWorkflowIT extends PostgresIT {
                             d -> d.findActiveByDomain(domain)).orElseThrow().graphJson())
                     .as("graph_json записан (B2)").isNotNull();
 
-            ctx.engine().transition(v, "IN_REVIEW", author, Set.of("RDM_AUTHOR"), null);
+            ctx.engine().transition(v, "IN_REVIEW", author, Set.of("RDM_STEWARD"), null);
             ctx.engine().transition(
                     v, "STEWARD_APPROVED", steward, Set.of("RDM_STEWARD"), null);
             assertThat(status(v)).isEqualTo("STEWARD_APPROVED");
@@ -297,7 +297,7 @@ final class FlowableWorkflowIT extends PostgresIT {
             assertThat(row.active()).isTrue();
 
             // submit → инстанс должен подняться из tenant-процесса домена.
-            ctx.engine().transition(v, "IN_REVIEW", author, Set.of("RDM_AUTHOR"), null);
+            ctx.engine().transition(v, "IN_REVIEW", author, Set.of("RDM_STEWARD"), null);
             assertThat(status(v)).isEqualTo("IN_REVIEW");
 
             ProcessInstance pi = ctx.manager().runtimeService()

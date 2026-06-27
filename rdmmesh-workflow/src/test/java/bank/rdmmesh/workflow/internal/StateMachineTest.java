@@ -97,17 +97,17 @@ class StateMachineTest {
     }
 
     @Test
-    void submit_allowed_for_RDM_AUTHOR_base_role() {
+    void submit_allowed_for_RDM_STEWARD_base_role() {
         // Кто-то другой (не creator), но с base RDM_AUTHOR — допустим (substitute author).
         Decision d = StateMachine.validate(req(Status.DRAFT, Status.IN_REVIEW,
-                STEWARD_A, AUTHOR, Set.of(), Set.of(), Set.of("RDM_AUTHOR"), null));
+                STEWARD_A, AUTHOR, Set.of(), Set.of(), Set.of("RDM_STEWARD"), null));
         assertThat(d.action()).isEqualTo(Action.submit);
     }
 
     @Test
     void submit_blocked_for_random_user() {
         assertThatThrownBy(() -> StateMachine.validate(req(Status.DRAFT, Status.IN_REVIEW,
-                STEWARD_A, AUTHOR, Set.of(), Set.of(), Set.of("RDM_CONSUMER"), null)))
+                STEWARD_A, AUTHOR, Set.of(), Set.of(), Set.of("RDM_VIEWER"), null)))
                 .isInstanceOf(InsufficientRoleException.class);
     }
 
@@ -138,7 +138,7 @@ class StateMachineTest {
     @Test
     void steward_approve_blocks_without_role() {
         assertThatThrownBy(() -> StateMachine.validate(req(Status.IN_REVIEW, Status.STEWARD_APPROVED,
-                STEWARD_A, AUTHOR, Set.of(), Set.of(), Set.of("RDM_CONSUMER"), null)))
+                STEWARD_A, AUTHOR, Set.of(), Set.of(), Set.of("RDM_VIEWER"), null)))
                 .isInstanceOf(InsufficientRoleException.class);
     }
 

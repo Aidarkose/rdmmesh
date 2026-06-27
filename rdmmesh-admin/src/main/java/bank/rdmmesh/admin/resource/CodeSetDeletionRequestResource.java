@@ -47,7 +47,7 @@ public final class CodeSetDeletionRequestResource {
     }
 
     @POST
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response submit(
             @Auth RdmmeshPrincipal principal,
             @PathParam("codesetId") String codesetId,

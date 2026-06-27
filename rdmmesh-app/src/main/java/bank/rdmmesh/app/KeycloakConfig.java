@@ -47,7 +47,7 @@ public final class KeycloakConfig {
      */
     @JsonProperty("requiredClaims")
     @NotNull
-    private List<String> requiredClaims = List.of("preferred_username", "sub");
+    private List<String> requiredClaims = List.of("preferred_username", "sub", "oid");
 
     /**
      * TTL для JWKS-кэша (Caffeine). 10 минут — компромисс между rotation и нагрузкой. Тип —

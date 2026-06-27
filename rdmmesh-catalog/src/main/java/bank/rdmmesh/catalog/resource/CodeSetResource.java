@@ -83,7 +83,7 @@ public final class CodeSetResource {
 
     @POST
     @Path("/by-domain/{domainId}")
-    @RolesAllowed({"RDM_SCHEMA_DESIGNER", "RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response create(
             @Auth RdmmeshPrincipal principal,
             @PathParam("domainId") String domainId,
@@ -112,7 +112,7 @@ public final class CodeSetResource {
 
     @PATCH
     @Path("/{id}")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public CodeSet patch(
             @Auth RdmmeshPrincipal principal,
             @PathParam("id") String id,
@@ -139,7 +139,7 @@ public final class CodeSetResource {
      */
     @PUT
     @Path("/{id}/references")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public CodeSet putReferences(
             @Auth RdmmeshPrincipal principal,
             @PathParam("id") String id,

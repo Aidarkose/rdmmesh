@@ -98,6 +98,7 @@ public final class JwtValidator {
     /** Compact projection of a verified JWT — keeps the validator decoupled from the port. */
     public record Resolved(
             UUID subject,
+            UUID objectGuid,
             String preferredUsername,
             String email,
             String displayName,
@@ -111,6 +112,15 @@ public final class JwtValidator {
             } catch (IllegalArgumentException ex) {
                 throw new InvalidJwtException("sub claim is not a UUID: " + jwt.getSubject());
             }
+            // AD objectGUID (claim `oid`) — стабильный якорь идентичности. В проде
+            // приходит из LDAP attribute mapper'а Keycloak; в dev — из realm-атрибута.
+            String oidRaw = stringClaim(jwt, "oid");
+            UUID objectGuid;
+            try {
+                objectGuid = UUID.fromString(oidRaw);
+            } catch (IllegalArgumentException | NullPointerException ex) {
+                throw new InvalidJwtException("oid (objectGUID) claim missing or not a UUID: " + oidRaw);
+            }
             String preferredUsername = stringClaim(jwt, "preferred_username");
             String email = stringClaim(jwt, "email");
             String displayName = stringClaim(jwt, "name");
@@ -122,7 +132,8 @@ public final class JwtValidator {
                     groups.addAll(asList);
                 }
             }
-            return new Resolved(sub, preferredUsername, email, displayName, Set.copyOf(groups), jwt);
+            return new Resolved(
+                    sub, objectGuid, preferredUsername, email, displayName, Set.copyOf(groups), jwt);
         }
 
         private static String stringClaim(DecodedJWT jwt, String name) {

@@ -67,7 +67,7 @@ public final class CodeSetVersionResource {
 
     @POST
     @Path("/by-codeset/{codesetId}")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response createDraft(
             @Auth RdmmeshPrincipal principal,
             @PathParam("codesetId") String codesetId,
@@ -98,7 +98,7 @@ public final class CodeSetVersionResource {
 
     @DELETE
     @Path("/{versionId}")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response delete(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId) {

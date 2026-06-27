@@ -47,14 +47,14 @@ public final class DeletionRequestResource {
 
     @GET
     @Path("/my")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public List<AdminDeletionRequestView> listMy(@Auth RdmmeshPrincipal principal) {
         return service.listMy(principal.omUserId());
     }
 
     @POST
     @Path("/{id}:cancel")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response cancel(
             @Auth RdmmeshPrincipal principal,
             @PathParam("id") String id) {

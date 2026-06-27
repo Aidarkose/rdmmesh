@@ -84,7 +84,7 @@ public final class CodeItemResource {
     }
 
     @POST
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response create(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId,
@@ -118,7 +118,7 @@ public final class CodeItemResource {
 
     @PATCH
     @Path("/{itemId}")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public CodeItemDto patch(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId,
@@ -141,7 +141,7 @@ public final class CodeItemResource {
 
     @DELETE
     @Path("/{itemId}")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response delete(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId,
@@ -165,7 +165,7 @@ public final class CodeItemResource {
      * UI-кнопка добавляет параметр после двухступенчатого подтверждения.
      */
     @DELETE
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public ClearAllResponse clearAll(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId,
@@ -190,7 +190,7 @@ public final class CodeItemResource {
 
     @POST
     @Path("/bulk")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response bulkJson(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId,
@@ -214,7 +214,7 @@ public final class CodeItemResource {
     @POST
     @Path("/bulk-csv")
     @Consumes("text/csv")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response bulkCsv(
             @Auth RdmmeshPrincipal principal, @PathParam("versionId") String versionId, InputStream body) {
         UUID v = parseUuid(versionId, "versionId");
@@ -232,7 +232,7 @@ public final class CodeItemResource {
     @POST
     @Path("/bulk-xlsx")
     @Consumes("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response bulkXlsx(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId,

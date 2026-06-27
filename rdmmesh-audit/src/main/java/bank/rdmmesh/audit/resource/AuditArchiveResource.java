@@ -71,7 +71,7 @@ public final class AuditArchiveResource {
      */
     @GET
     @Path("/{segment}/verify")
-    @RolesAllowed({"RDM_ADMIN", "RDM_AUDITOR"})
+    @RolesAllowed({"RDM_ADMIN"})
     public VerifyResult verify(
             @Auth RdmmeshPrincipal principal,
             @PathParam("segment") String segment) {

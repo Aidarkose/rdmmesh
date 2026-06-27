@@ -230,7 +230,7 @@ final class WorkflowGraphInvariantsTest {
         UUID a = UUID.randomUUID();
         Request submit = new Request(
                 Status.DRAFT, Status.IN_REVIEW, a, a,
-                Set.of(), Set.of(), Set.of("RDM_AUTHOR"), null);
+                Set.of(), Set.of(), Set.of("RDM_STEWARD"), null);
         assertThat(StateMachine.validate(submit).action()).isEqualTo(Action.submit);
         assertThat(StateMachine.validate(submit, WorkflowGraph.defaultFourEyes()).action())
                 .isEqualTo(Action.submit);

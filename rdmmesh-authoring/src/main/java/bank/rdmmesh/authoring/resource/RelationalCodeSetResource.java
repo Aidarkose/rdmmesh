@@ -63,7 +63,7 @@ public final class RelationalCodeSetResource {
 
     @POST
     @Path("/provision")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public ProvisionResult provision(@Auth RdmmeshPrincipal principal, @PathParam("id") String id) {
         try {
             return store.provision(parseUuid(id));
@@ -74,7 +74,7 @@ public final class RelationalCodeSetResource {
 
     @POST
     @Path("/draft-rows")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response upsertDraftRow(
             @Auth RdmmeshPrincipal principal,
             @PathParam("id") String id,
@@ -93,7 +93,7 @@ public final class RelationalCodeSetResource {
 
     @DELETE
     @Path("/draft-rows")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public Response deleteDraftRow(
             @Auth RdmmeshPrincipal principal,
             @PathParam("id") String id,
@@ -126,7 +126,7 @@ public final class RelationalCodeSetResource {
 
     @POST
     @Path("/publish")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public PublishResult publish(
             @Auth RdmmeshPrincipal principal,
             @PathParam("id") String id,
@@ -228,7 +228,7 @@ public final class RelationalCodeSetResource {
 
     @POST
     @Path("/foreign-keys")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public RelationalStoreService.ForeignKeyReport applyForeignKeys(
             @Auth RdmmeshPrincipal principal, @PathParam("id") String id) {
         try {

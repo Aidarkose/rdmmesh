@@ -62,17 +62,35 @@ final class JwtValidatorTest {
 
     @Test
     void validates_a_well_formed_token() {
+        UUID oid = UUID.randomUUID();
         String token = sign(b -> b
                 .withIssuer(ISSUER)
                 .withAudience(AUDIENCE)
                 .withSubject(UUID.randomUUID().toString())
-                .withClaim("preferred_username", "dev-author")
-                .withClaim("groups", List.of("RDM_AUTHOR")));
+                .withClaim("preferred_username", "dev-steward")
+                .withClaim("oid", oid.toString())
+                .withClaim("groups", List.of("RDM_STEWARD")));
 
         var resolved = validator.validate(token);
 
-        assertThat(resolved.preferredUsername()).isEqualTo("dev-author");
-        assertThat(resolved.groups()).containsExactly("RDM_AUTHOR");
+        assertThat(resolved.preferredUsername()).isEqualTo("dev-steward");
+        assertThat(resolved.objectGuid()).isEqualTo(oid);
+        assertThat(resolved.groups()).containsExactly("RDM_STEWARD");
+    }
+
+    @Test
+    void rejects_token_without_oid_claim() {
+        // Валидный по подписи/iss/aud токен, но без AD objectGUID (claim `oid`) — отвергаем:
+        // objectGUID — обязательный якорь идентичности.
+        String token = sign(b -> b
+                .withIssuer(ISSUER)
+                .withAudience(AUDIENCE)
+                .withSubject(UUID.randomUUID().toString())
+                .withClaim("preferred_username", "x"));
+
+        assertThatThrownBy(() -> validator.validate(token))
+                .isInstanceOf(InvalidJwtException.class)
+                .hasMessageContaining("oid");
     }
 
     @Test

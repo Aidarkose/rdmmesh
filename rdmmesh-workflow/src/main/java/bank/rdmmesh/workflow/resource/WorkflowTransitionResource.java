@@ -54,7 +54,7 @@ public final class WorkflowTransitionResource {
 
     @POST
     @Path("/{versionId}/transitions")
-    @RolesAllowed({"RDM_AUTHOR", "RDM_STEWARD", "RDM_OWNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_OWNER", "RDM_ADMIN"})
     public Response transition(
             @Auth RdmmeshPrincipal principal,
             @PathParam("versionId") String versionId,

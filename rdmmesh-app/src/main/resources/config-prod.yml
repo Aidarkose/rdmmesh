@@ -119,6 +119,7 @@ keycloak:
   requiredClaims:
     - preferred_username
     - sub
+    - oid
   jwksCacheTtl:  10 minutes
   clockSkew:     60 seconds
 

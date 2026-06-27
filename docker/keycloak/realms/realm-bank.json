@@ -18,27 +18,21 @@
 
   "groups": [
     { "name": "RDM_ADMIN" },
-    { "name": "RDM_AUTHOR" },
     { "name": "RDM_STEWARD" },
     { "name": "RDM_OWNER" },
-    { "name": "RDM_SCHEMA_DESIGNER" },
-    { "name": "RDM_AUDITOR" },
-    { "name": "RDM_CONSUMER" }
+    { "name": "RDM_VIEWER" }
   ],
 
   "roles": {
     "realm": [
-      { "name": "RDM_ADMIN",            "description": "Глобальный администратор rdmmesh (без права обхода workflow)." },
-      { "name": "RDM_AUTHOR",           "description": "Создаёт и редактирует draft-версии справочников в своём домене." },
-      { "name": "RDM_STEWARD",          "description": "Технический ревью draft, approve/reject — per domain." },
-      { "name": "RDM_OWNER",            "description": "Бизнес-approve, инициирует publish — per CodeSet (приходит из OM)." },
-      { "name": "RDM_SCHEMA_DESIGNER",  "description": "Проектирует CodeSetSchema." },
-      { "name": "RDM_AUDITOR",          "description": "Read-only доступ к audit-журналу и verify-chain (compliance team). Не имеет прав admin'а — не управляет subscriptions, не запускает closure rebuild." },
-      { "name": "RDM_CONSUMER",         "description": "Read-only по published-версиям через REST API/UI." }
+      { "name": "RDM_ADMIN",   "description": "Операционная роль платформы (вне DG-триады): управление доменами/удалениями, audit-доступ. Без права обхода workflow." },
+      { "name": "RDM_STEWARD", "description": "Создаёт и редактирует draft-версии справочников (бывший author), технический review, submit. DG-роль (per-domain в OM)." },
+      { "name": "RDM_OWNER",   "description": "Бизнес-approve/publish справочников своего домена и доменов ниже по иерархии. DG-роль (per-domain в OM)." },
+      { "name": "RDM_VIEWER",  "description": "Read-only по доменам/справочникам/содержимому. Дефолтная роль до назначения DG-роли в OM." }
     ]
   },
 
-  "defaultGroups": ["RDM_CONSUMER"],
+  "defaultGroups": ["RDM_VIEWER"],
 
   "clients": [
     {
@@ -78,6 +72,34 @@
           "config": {
             "claim.name": "groups",
             "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "preferred_username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "object-guid",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "objectGUID",
+            "claim.name": "oid",
+            "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
             "userinfo.token.claim": "true"
@@ -146,6 +168,20 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "true"
           }
+        },
+        {
+          "name": "object-guid",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "objectGUID",
+            "claim.name": "oid",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
         }
       ]
     }
@@ -153,99 +189,117 @@
 
   "users": [
     {
+      "id": "500d90c1-a9e4-4377-a698-70ee677cc642",
       "username": "dev-admin",
       "enabled": true,
       "email": "dev-admin@bank.local",
       "firstName": "Dev",
       "lastName": "Admin",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-000000000001"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],
       "groups": ["RDM_ADMIN"]
     },
     {
+      "id": "b6200798-9d64-422d-b39c-9d24425eeece",
       "username": "dev-author",
       "enabled": true,
       "email": "dev-author@bank.local",
       "firstName": "Dev",
       "lastName": "Author",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-000000000002"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],
-      "groups": ["RDM_AUTHOR", "RDM_SCHEMA_DESIGNER"]
+      "groups": ["RDM_STEWARD"]
     },
     {
+      "id": "66469b73-60a7-4524-bc71-853fda1eab2a",
       "username": "dev-steward",
       "enabled": true,
       "email": "dev-steward@bank.local",
       "firstName": "Dev",
       "lastName": "Steward",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-000000000003"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],
       "groups": ["RDM_STEWARD"]
     },
     {
+      "id": "d0042f39-edbd-49c4-8228-9eeb20a458e4",
       "username": "dev-owner",
       "enabled": true,
       "email": "dev-owner@bank.local",
       "firstName": "Dev",
       "lastName": "Owner",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-000000000004"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],
       "groups": ["RDM_OWNER"]
     },
     {
+      "id": "e7c91f02-3b6a-4d51-9f44-1c2b3d4e5f06",
       "username": "dev-auditor",
       "enabled": true,
       "email": "dev-auditor@bank.local",
       "firstName": "Dev",
       "lastName": "Auditor",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-000000000005"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],
-      "groups": ["RDM_AUDITOR"]
+      "groups": ["RDM_ADMIN"]
     },
     {
+      "id": "5fcfbb4f-231d-4c15-9f50-70b087d65c89",
       "username": "aigerim.bekova",
       "enabled": true,
       "email": "aigerim.bekova@open-metadata.org",
       "firstName": "Aigerim",
       "lastName": "Bekova",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-0000000000a1"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],
       "groups": ["RDM_OWNER"]
     },
     {
+      "id": "0786e2f9-6cf1-4a9d-af1b-5819b0f739f7",
       "username": "dana.akhmetova",
       "enabled": true,
       "email": "dana.akhmetova@open-metadata.org",
       "firstName": "Dana",
       "lastName": "Akhmetova",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-0000000000a2"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],
       "groups": ["RDM_OWNER"]
     },
     {
+      "id": "5ae38589-ed6c-448b-95c5-db6da16337ae",
       "username": "marat.suleimenov",
       "enabled": true,
       "email": "marat.suleimenov@open-metadata.org",
       "firstName": "Marat",
       "lastName": "Suleimenov",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-0000000000a3"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],
       "groups": ["RDM_STEWARD"]
     },
     {
+      "id": "ce5c3317-aa37-484e-b418-a896cdb5c563",
       "username": "timur.iskakov",
       "enabled": true,
       "email": "timur.iskakov@open-metadata.org",
       "firstName": "Timur",
       "lastName": "Iskakov",
+      "attributes": { "objectGUID": ["ad000000-0000-0000-0000-0000000000a4"] },
       "credentials": [
         { "type": "password", "value": "dev", "temporary": false }
       ],

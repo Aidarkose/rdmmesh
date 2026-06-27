@@ -59,7 +59,7 @@ public final class CodeSetSchemaResource {
     }
 
     @PUT
-    @RolesAllowed({"RDM_SCHEMA_DESIGNER", "RDM_ADMIN"})
+    @RolesAllowed({"RDM_STEWARD", "RDM_ADMIN"})
     public CodeSetSchemaDto putRevision(
             @Auth RdmmeshPrincipal principal,
             @PathParam("codesetId") String codesetId,

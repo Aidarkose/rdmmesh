@@ -1,10 +1,6 @@
 package bank.rdmmesh.identity.internal;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import org.jdbi.v3.core.Jdbi;
@@ -27,12 +23,12 @@ import bank.rdmmesh.identity.internal.om.OpenMetadataUserClient;
  *
  * <ol>
  *   <li>Валидация JWT через {@link JwtValidator} (signature/iss/aud/exp + required claims).
- *   <li>Lookup в {@code identity.rdm_user_mapping} по {@code keycloak_sub} — fast path.
- *   <li>На cache miss + наличии OM-клиента — REST в OM по {@code preferred_username}, попадание
- *       в БД через {@code upsert}.
- *   <li>Если OM нет / не нашёл — fallback на deterministic UUID v5 от {@code (rdm_namespace, sub)}
- *       и provisional-запись в mapping. SPEC §2.4: provisional не блокирует логин, но фиксируется
- *       как {@code owner_was_provisional} в audit при последующих публикациях.
+ *   <li>Lookup в {@code identity.rdm_user_mapping} по {@code object_guid} (AD objectGUID,
+ *       claim {@code oid}) — стабильный якорь, fast path.
+ *   <li>На miss / пока {@code om_user_id IS NULL} + наличии OM-клиента — REST в OM по
+ *       {@code preferred_username}; попадание фиксируется один раз и далее замораживается.
+ *   <li>Если OM нет / не нашёл — пользователь остаётся <b>viewer</b> с {@code om_user_id = NULL}
+ *       (read-only, истории не порождает). Provisional UUID больше не выдаётся.
  * </ol>
  *
  * <p>Решения {@link #resolveOmUserId(UUID)} / {@link #resolveKeycloakSub(UUID)} — read-only из БД,
@@ -44,10 +40,6 @@ import bank.rdmmesh.identity.internal.om.OpenMetadataUserClient;
 public final class KeycloakIdentityPort implements IdentityPort {
 
     private static final Logger log = LoggerFactory.getLogger(KeycloakIdentityPort.class);
-
-    /** Namespace для deterministic provisional UUID v5: random-once UUID, прибит для воспроизводимости. */
-    private static final UUID RDM_PROVISIONAL_NAMESPACE =
-            UUID.fromString("c5b1a4e1-7c00-4e2c-9c8b-2c0c2c8a6f10");
 
     private final Jdbi jdbi;
     private final JwtValidator jwtValidator;
@@ -64,7 +56,7 @@ public final class KeycloakIdentityPort implements IdentityPort {
         this.jwtValidator = jwtValidator;
         this.omClient = omClient;
         this.groupsClaim = groupsClaim;
-        // Кэш именно по keycloak_sub, а не по token — токены короткоживущие, sub стабилен.
+        // Кэш по object_guid (стабильный AD-якорь), а не по token — токены короткоживущие.
         // Размер ограничен — типовой банковский домен ≤ 50k активных юзеров; 10k — запас.
         this.authCache = Caffeine.newBuilder()
                 .maximumSize(10_000)
@@ -74,82 +66,66 @@ public final class KeycloakIdentityPort implements IdentityPort {
     @Override
     public AuthenticatedUser authenticate(String bearerToken) {
         var resolved = jwtValidator.validate(bearerToken);
-        return authCache.get(resolved.subject(), sub -> resolve(resolved));
+        return authCache.get(resolved.objectGuid(), guid -> resolve(resolved));
     }
 
     private AuthenticatedUser resolve(JwtValidator.Resolved resolved) {
+        UUID objectGuid = resolved.objectGuid();
         UUID keycloakSub = resolved.subject();
         String resolvedUsername = resolved.preferredUsername();
-        // Хотя preferred_username включён в requiredClaims — оставим safety-net.
+        // preferred_username входит в requiredClaims — но оставим safety-net.
         final String username =
                 (resolvedUsername == null || resolvedUsername.isBlank())
-                        ? "unknown@" + keycloakSub
+                        ? "unknown@" + objectGuid
                         : resolvedUsername;
 
         Optional<UserMappingRow> existing = jdbi.withExtension(
-                UserMappingDao.class, dao -> dao.findByKeycloakSub(keycloakSub));
+                UserMappingDao.class, dao -> dao.findByObjectGuid(objectGuid));
+
         if (existing.isPresent()) {
-            jdbi.useExtension(UserMappingDao.class, dao -> dao.touchLastSeen(keycloakSub));
-            return materialize(existing.get(), resolved);
+            UUID omUserId = existing.get().omUserId();
+            // Резолвим до первого успеха: пока om_user_id пуст — пробуем привязать
+            // (роль в OM могли назначить уже после первого логина). После успеха —
+            // значение заморожено (bindOmUserId срабатывает только при om_user_id IS NULL).
+            if (omUserId == null) {
+                omUserId = lookupOmUserId(username).orElse(null);
+                if (omUserId != null) {
+                    final UUID bound = omUserId;
+                    jdbi.useExtension(UserMappingDao.class,
+                            dao -> dao.bindOmUserId(objectGuid, bound));
+                    log.info("identity: om_user_id привязан username={} object_guid={} om_user_id={}",
+                            username, objectGuid, bound);
+                }
+            }
+            jdbi.useExtension(UserMappingDao.class, dao -> dao.touchLastSeen(objectGuid));
+            return new AuthenticatedUser(omUserId, keycloakSub, username, resolved.groups());
         }
 
-        UUID omUserId = lookupOrProvisionalOmUserId(username, keycloakSub);
+        // Первый логин под этим objectGUID: нет роли в OM → viewer (om_user_id=NULL).
+        UUID omUserId = lookupOmUserId(username).orElse(null);
         jdbi.useExtension(UserMappingDao.class, dao -> dao.upsert(
+                objectGuid,
                 omUserId,
                 keycloakSub,
                 username,
                 resolved.email(),
                 resolved.displayName()));
-        log.info("identity: новый пользователь username={} keycloak_sub={} om_user_id={}",
-                username, keycloakSub, omUserId);
+        log.info("identity: новый пользователь username={} object_guid={} om_user_id={}",
+                username, objectGuid, omUserId);
         return new AuthenticatedUser(omUserId, keycloakSub, username, resolved.groups());
     }
 
-    private UUID lookupOrProvisionalOmUserId(String username, UUID keycloakSub) {
-        if (omClient != null) {
-            Optional<UUID> fromOm = omClient.findUserIdByName(username);
-            if (fromOm.isPresent()) {
-                return fromOm.get();
-            }
-            log.warn("identity: OM не вернул user.id для {}; ставлю provisional UUID", username);
-        } else {
-            log.debug("identity: OM-клиент не настроен; provisional UUID для {}", username);
+    /** Резолв реального OM User.id по имени учётки. Пусто → пользователь остаётся viewer. */
+    private Optional<UUID> lookupOmUserId(String username) {
+        if (omClient == null) {
+            log.debug("identity: OM-клиент не настроен; {} — viewer (om_user_id=NULL)", username);
+            return Optional.empty();
         }
-        return provisionalUuid(keycloakSub);
-    }
-
-    private static UUID provisionalUuid(UUID keycloakSub) {
-        // Detached UUID v5: namespace ⊕ keycloak_sub. Если в будущем OM найдётся — replace
-        // через UPDATE SET om_user_id = real (разрешено в SPEC §2.4 reconciliation).
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-1");
-            md.update(toBytes(RDM_PROVISIONAL_NAMESPACE));
-            md.update(keycloakSub.toString().getBytes(StandardCharsets.UTF_8));
-            byte[] hash = md.digest();
-            hash[6] = (byte) ((hash[6] & 0x0F) | 0x50);   // version 5
-            hash[8] = (byte) ((hash[8] & 0x3F) | 0x80);   // variant RFC4122
-            long msb = 0;
-            long lsb = 0;
-            for (int i = 0; i < 8; i++) msb = (msb << 8) | (hash[i] & 0xff);
-            for (int i = 8; i < 16; i++) lsb = (lsb << 8) | (hash[i] & 0xff);
-            return new UUID(msb, lsb);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-1 not available", e);
+        Optional<UUID> fromOm = omClient.findUserIdByName(username);
+        if (fromOm.isEmpty()) {
+            log.debug("identity: OM не вернул user.id для {}; viewer (om_user_id=NULL)", username);
         }
-    }
-
-    private static byte[] toBytes(UUID uuid) {
-        long msb = uuid.getMostSignificantBits();
-        long lsb = uuid.getLeastSignificantBits();
-        byte[] out = new byte[16];
-        for (int i = 0; i < 8; i++) out[i] = (byte) (msb >>> (56 - i * 8));
-        for (int i = 0; i < 8; i++) out[8 + i] = (byte) (lsb >>> (56 - i * 8));
-        return out;
-    }
-
-    private AuthenticatedUser materialize(UserMappingRow row, JwtValidator.Resolved resolved) {
-        Set<String> groups = resolved.groups();
-        return new AuthenticatedUser(row.omUserId(), row.keycloakSub(), row.username(), groups);
+        return fromOm;
     }
 
     @Override
