@@ -1,0 +1,24 @@
+{
+  "name": "r_coef_ead_ttd",
+  "display_name": "Coefficient: EAD by TTD",
+  "label_ru": "Коэффициенты EAD по TTD",
+  "label_en": "EAD coefficients by TTD",
+  "tags": ["ecl", "ifrs9", "kind:coefficient"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "estimation_mnth", "type": "DATE",    "label": {"ru": "Месяц оценки", "en": "Estimation month"}},
+      {"name": "product_id",      "type": "INTEGER", "label": {"ru": "Продукт", "en": "Product"}},
+      {"name": "bucket",          "type": "INTEGER", "label": {"ru": "Бакет", "en": "Bucket"}},
+      {"name": "ttd",             "type": "INTEGER", "label": {"ru": "TTD", "en": "TTD"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "metric_val": {"type": ["number", "null"], "description": "Значение коэффициента EAD"},
+      "load_dttm":  {"type": ["string", "null"], "description": "Момент загрузки"}
+    }
+  }
+}

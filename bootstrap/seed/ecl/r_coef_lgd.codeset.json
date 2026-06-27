@@ -1,0 +1,23 @@
+{
+  "name": "r_coef_lgd",
+  "display_name": "Coefficient: LGD",
+  "label_ru": "Коэффициенты LGD",
+  "label_en": "LGD coefficients",
+  "tags": ["ecl", "ifrs9", "kind:coefficient"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "estimation_mnth",    "type": "DATE",    "label": {"ru": "Месяц оценки", "en": "Estimation month"}},
+      {"name": "pledge_group_id",    "type": "INTEGER", "label": {"ru": "Группа залога", "en": "Pledge group"}},
+      {"name": "remaining_duration", "type": "INTEGER", "label": {"ru": "Остаточный срок", "en": "Remaining duration"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "metric_val": {"type": ["number", "null"], "description": "Значение коэффициента LGD"},
+      "load_dttm":  {"type": ["string", "null"], "description": "Момент загрузки"}
+    }
+  }
+}

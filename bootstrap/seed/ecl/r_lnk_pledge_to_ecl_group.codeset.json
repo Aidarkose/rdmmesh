@@ -1,0 +1,23 @@
+{
+  "name": "r_lnk_pledge_to_ecl_group",
+  "display_name": "Link: Pledge → ECL Group",
+  "label_ru": "Маппинг: залог → группа ECL",
+  "label_en": "Mapping: pledge → ECL group",
+  "tags": ["ecl", "ifrs9", "kind:mapping"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "lnk_id", "type": "INTEGER", "label": {"ru": "ID связи", "en": "Link ID"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "pledge_code":     {"type": ["string", "null"], "description": "Код типа залога источника"},
+      "pledge_group_id": {"type": ["integer", "null"], "description": "Ссылка на r_ecl_pledge_group.id"},
+      "valid_from":      {"type": ["string", "null"]},
+      "valid_to":        {"type": ["string", "null"], "description": "9999-12-31 = открыта"}
+    }
+  }
+}

@@ -206,6 +206,50 @@
         { "type": "password", "value": "dev", "temporary": false }
       ],
       "groups": ["RDM_AUDITOR"]
+    },
+    {
+      "username": "aigerim.bekova",
+      "enabled": true,
+      "email": "aigerim.bekova@open-metadata.org",
+      "firstName": "Aigerim",
+      "lastName": "Bekova",
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "groups": ["RDM_OWNER"]
+    },
+    {
+      "username": "dana.akhmetova",
+      "enabled": true,
+      "email": "dana.akhmetova@open-metadata.org",
+      "firstName": "Dana",
+      "lastName": "Akhmetova",
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "groups": ["RDM_OWNER"]
+    },
+    {
+      "username": "marat.suleimenov",
+      "enabled": true,
+      "email": "marat.suleimenov@open-metadata.org",
+      "firstName": "Marat",
+      "lastName": "Suleimenov",
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "groups": ["RDM_STEWARD"]
+    },
+    {
+      "username": "timur.iskakov",
+      "enabled": true,
+      "email": "timur.iskakov@open-metadata.org",
+      "firstName": "Timur",
+      "lastName": "Iskakov",
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "groups": ["RDM_STEWARD"]
     }
   ]
 }

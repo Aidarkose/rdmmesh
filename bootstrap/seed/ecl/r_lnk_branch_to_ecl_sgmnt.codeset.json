@@ -1,0 +1,23 @@
+{
+  "name": "r_lnk_branch_to_ecl_sgmnt",
+  "display_name": "Link: Branch → ECL Segment",
+  "label_ru": "Маппинг: филиал → сегмент ECL",
+  "label_en": "Mapping: branch → ECL segment",
+  "tags": ["ecl", "ifrs9", "kind:mapping"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "lnk_id", "type": "INTEGER", "label": {"ru": "ID связи", "en": "Link ID"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "branch_code":     {"type": ["integer", "null"], "description": "Код филиала источника"},
+      "branch_sgmnt_id": {"type": ["integer", "null"], "description": "Ссылка на r_ecl_branch_sgmnt.id"},
+      "valid_from":      {"type": ["string", "null"]},
+      "valid_to":        {"type": ["string", "null"], "description": "9999-12-31 = открыта"}
+    }
+  }
+}

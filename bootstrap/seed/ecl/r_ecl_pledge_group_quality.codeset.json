@@ -1,0 +1,23 @@
+{
+  "name": "r_ecl_pledge_group_quality",
+  "display_name": "ECL Pledge Group Quality",
+  "label_ru": "Качество групп залогов (ECL)",
+  "label_en": "ECL pledge group quality",
+  "tags": ["ecl", "ifrs9", "kind:dimension"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "quality_id", "type": "INTEGER", "label": {"ru": "ID записи", "en": "Row ID"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "pledge_group_id": {"type": ["integer", "null"], "description": "Ссылка на r_ecl_pledge_group.id"},
+      "metric_val":      {"type": ["number", "null"], "description": "Коэффициент качества залога"},
+      "valid_from":      {"type": ["string", "null"]},
+      "valid_to":        {"type": ["string", "null"], "description": "9999-12-31 = открыта"}
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "r_ecl_pledge_group",
+  "display_name": "ECL Pledge Group",
+  "label_ru": "Группы залогов (ECL)",
+  "label_en": "ECL pledge groups",
+  "tags": ["ecl", "ifrs9", "kind:dimension"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "pledge_group_id", "type": "INTEGER", "label": {"ru": "ID группы", "en": "Group ID"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "pledge_priority": {"type": ["integer", "null"], "description": "Приоритет группы залога при покрытии"},
+      "valid_from":      {"type": ["string", "null"]},
+      "valid_to":        {"type": ["string", "null"], "description": "9999-12-31 = открыта"}
+    }
+  }
+}

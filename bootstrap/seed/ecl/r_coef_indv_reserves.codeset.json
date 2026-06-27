@@ -1,0 +1,26 @@
+{
+  "name": "r_coef_indv_reserves",
+  "display_name": "Coefficient: Individual Reserves",
+  "label_ru": "Индивидуальные резервы по сделкам",
+  "label_en": "Individual reserves by deal",
+  "tags": ["ecl", "ifrs9", "kind:coefficient"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "report_dt",   "type": "DATE",    "label": {"ru": "Отчётная дата", "en": "Report date"}},
+      {"name": "deal_id",     "type": "INTEGER", "label": {"ru": "ID сделки", "en": "Deal ID"}},
+      {"name": "deal_dep_id", "type": "INTEGER", "label": {"ru": "ID подразделения сделки", "en": "Deal dept ID"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "refer_id":   {"type": ["string", "null"], "description": "Референс сделки"},
+      "metric_val": {"type": ["number", "null"], "description": "Индивидуальный резерв (доля)"},
+      "valid_from": {"type": ["string", "null"]},
+      "valid_to":   {"type": ["string", "null"], "description": "9999-12-31 = открыта"},
+      "load_dttm":  {"type": ["string", "null"], "description": "Момент загрузки"}
+    }
+  }
+}

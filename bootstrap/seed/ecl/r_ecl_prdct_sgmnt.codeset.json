@@ -1,0 +1,21 @@
+{
+  "name": "r_ecl_prdct_sgmnt",
+  "display_name": "ECL Product Segment",
+  "label_ru": "Сегменты продуктов (ECL)",
+  "label_en": "ECL product segments",
+  "tags": ["ecl", "ifrs9", "kind:dimension"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "prdct_sgmnt_id", "type": "INTEGER", "label": {"ru": "ID сегмента", "en": "Segment ID"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "valid_from": {"type": ["string", "null"], "description": "Начало действия записи"},
+      "valid_to":   {"type": ["string", "null"], "description": "Конец действия; 9999-12-31 = открыта"}
+    }
+  }
+}

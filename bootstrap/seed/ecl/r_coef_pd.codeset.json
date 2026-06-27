@@ -1,0 +1,25 @@
+{
+  "name": "r_coef_pd",
+  "display_name": "Coefficient: PD",
+  "label_ru": "Коэффициенты PD",
+  "label_en": "PD coefficients",
+  "tags": ["ecl", "ifrs9", "kind:coefficient"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "estimation_mnth",    "type": "DATE",    "label": {"ru": "Месяц оценки", "en": "Estimation month"}},
+      {"name": "product_id",         "type": "INTEGER", "label": {"ru": "Продукт", "en": "Product"}},
+      {"name": "branch_id",          "type": "INTEGER", "label": {"ru": "Филиал", "en": "Branch"}},
+      {"name": "bucket",             "type": "INTEGER", "label": {"ru": "Бакет", "en": "Bucket"}},
+      {"name": "remaining_duration", "type": "INTEGER", "label": {"ru": "Остаточный срок", "en": "Remaining duration"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "metric_val": {"type": ["number", "null"], "description": "Значение коэффициента PD"},
+      "load_dttm":  {"type": ["string", "null"], "description": "Момент загрузки"}
+    }
+  }
+}

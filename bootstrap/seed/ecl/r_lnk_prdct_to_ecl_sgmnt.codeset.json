@@ -1,0 +1,23 @@
+{
+  "name": "r_lnk_prdct_to_ecl_sgmnt",
+  "display_name": "Link: Product → ECL Segment",
+  "label_ru": "Маппинг: продукт → сегмент ECL",
+  "label_en": "Mapping: product → ECL segment",
+  "tags": ["ecl", "ifrs9", "kind:mapping"],
+  "hierarchy_mode": "NONE",
+  "key_spec": {
+    "parts": [
+      {"name": "lnk_id", "type": "INTEGER", "label": {"ru": "ID связи", "en": "Link ID"}}
+    ]
+  },
+  "initial_schema": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "product_code":     {"type": ["string", "null"], "description": "Код продукта источника"},
+      "product_sgmnt_id": {"type": ["integer", "null"], "description": "Ссылка на r_ecl_prdct_sgmnt.id"},
+      "valid_from":       {"type": ["string", "null"]},
+      "valid_to":         {"type": ["string", "null"], "description": "9999-12-31 = открыта"}
+    }
+  }
+}
