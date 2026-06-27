@@ -1,5 +1,8 @@
 package bank.rdmmesh.ownership;
 
+import java.time.Duration;
+import java.util.Optional;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jdbi.v3.core.Jdbi;
 
@@ -10,8 +13,11 @@ import bank.rdmmesh.api.port.OwnershipPort;
 import bank.rdmmesh.api.port.SigningKeyPort;
 import bank.rdmmesh.ownership.internal.PostgresApproverDirectoryPort;
 import bank.rdmmesh.ownership.internal.PostgresOwnershipPort;
+import bank.rdmmesh.ownership.internal.om.CatalogSyncService;
+import bank.rdmmesh.ownership.internal.om.OpenMetadataCatalogClient;
 import bank.rdmmesh.ownership.internal.webhook.HmacVerifier;
 import bank.rdmmesh.ownership.internal.webhook.OwnershipWebhookService;
+import bank.rdmmesh.ownership.resource.CatalogSyncWebhookResource;
 import bank.rdmmesh.ownership.resource.DomainApproversAdminResource;
 import bank.rdmmesh.ownership.resource.DomainApproversResource;
 import bank.rdmmesh.ownership.resource.DomainRoleDirectoryAdminResource;
@@ -76,5 +82,33 @@ public final class OwnershipModule {
         var hmac = new HmacVerifier(signingKey);
         var service = new OwnershipWebhookService(jdbi, catalogMirror, ownership, eventBus);
         return new OwnershipWebhookResource(hmac, service, json);
+    }
+
+    /**
+     * Приёмник тонкого уведомления OM Alert {@code Domain_and_Roles_sync_for_RDMmesh}:
+     * POST /webhooks/om/catalog-sync. По уведомлению RDM сам тянет домены и роли из
+     * нативного OM REST API (Bearer bot-token) и апсертит в зеркало. Возвращает
+     * {@link Optional#empty()}, если OM не сконфигурирован (нет baseUrl/botToken) —
+     * тогда App просто не регистрирует ресурс.
+     *
+     * @param omWebhookKey тот же inbound-ключ HMAC, что у ownership-webhook'а
+     *                     ({@code RDM_OM_WEBHOOK_HMAC_KEY}).
+     */
+    public static Optional<CatalogSyncWebhookResource> buildCatalogSyncResource(
+            SigningKeyPort omWebhookKey,
+            CatalogMirrorPort catalogMirror,
+            String omBaseUrl,
+            String omBotToken,
+            Duration connectTimeout,
+            Duration requestTimeout) {
+        if (omBaseUrl == null || omBaseUrl.isBlank()
+                || omBotToken == null || omBotToken.isBlank()) {
+            return Optional.empty();
+        }
+        var client = new OpenMetadataCatalogClient(
+                omBaseUrl, omBotToken, connectTimeout, requestTimeout);
+        var service = new CatalogSyncService(client, catalogMirror);
+        var hmac = new HmacVerifier(omWebhookKey);
+        return Optional.of(new CatalogSyncWebhookResource(hmac, service));
     }
 }

@@ -58,4 +58,20 @@ public interface CatalogMirrorPort {
     record DomainMirrorResult(UUID id, UUID omDomainId, MirrorOp op) {}
 
     enum MirrorOp { CREATED, UPDATED, RESURRECTED, UNCHANGED }
+
+    /**
+     * UPSERT роли OM по {@code om_role_id} (часть OM→rdmmesh sync доменов/ролей).
+     * Идемпотентно; resurrect при выставленном deleted_at — как у domain'а.
+     */
+    RoleMirrorResult upsertRoleFromOm(RoleMirror mirror);
+
+    /** Snapshot роли OM в форме, нужной sync-сервису. */
+    record RoleMirror(
+            UUID omRoleId,
+            String name,
+            String displayName,
+            String description) {}
+
+    /** Что произошло после UPSERT роли. */
+    record RoleMirrorResult(UUID id, UUID omRoleId, MirrorOp op) {}
 }

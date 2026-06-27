@@ -233,6 +233,18 @@ public final class RdmmeshApplication extends Application<RdmmeshConfiguration> 
         environment.jersey().register(OwnershipModule.buildWebhookResource(
                 jdbi, catalogMirror, ownershipPort, omWebhookKey, eventBus, environment.getObjectMapper()));
 
+        // Часть 1 интеграции OM→rdmmesh (thin-notification + pull). OM Alert
+        // `Domain_and_Roles_sync_for_RDMmesh` (фильтр на типы domain/role) шлёт тонкое
+        // уведомление на POST /webhooks/om/catalog-sync; RDM по нему сам тянет домены и
+        // роли из нативного secure REST API OM (Bearer bot-token) и апсертит в зеркало.
+        // Регистрируется только если OM сконфигурирован (RDM_OM_BASE_URL/BOT_TOKEN).
+        var omCfg = config.getOpenmetadata();
+        OwnershipModule.buildCatalogSyncResource(
+                        omWebhookKey, catalogMirror,
+                        omCfg.getBaseUrl(), omCfg.getBotToken(),
+                        omCfg.getConnectTimeout(), omCfg.getRequestTimeout())
+                .ifPresent(environment.jersey()::register);
+
         // E8 — Distribution. Read-only consumer-API:
         //   GET /rdm/{domain}/{codeset}/{items|lookup|export}
         // ArchUnit-gates запрещают этому модулю любые DB writes.

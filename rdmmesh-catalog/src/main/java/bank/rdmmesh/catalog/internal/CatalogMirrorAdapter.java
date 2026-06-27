@@ -10,6 +10,8 @@ import bank.rdmmesh.api.port.CatalogMirrorPort;
 import bank.rdmmesh.catalog.internal.dao.CodeSetDao;
 import bank.rdmmesh.catalog.internal.dao.DomainDao;
 import bank.rdmmesh.catalog.internal.dao.DomainDao.DomainRow;
+import bank.rdmmesh.catalog.internal.dao.OmRoleDao;
+import bank.rdmmesh.catalog.internal.dao.OmRoleDao.OmRoleRow;
 
 /**
  * Реализация {@link CatalogMirrorPort} — write-side контракт catalog'а для OM webhook'а.
@@ -63,6 +65,43 @@ public final class CatalogMirrorAdapter implements CatalogMirrorPort {
             op = MirrorOp.UPDATED;
         }
         return new DomainMirrorResult(after.id(), after.omDomainId(), op);
+    }
+
+    @Override
+    public RoleMirrorResult upsertRoleFromOm(RoleMirror mirror) {
+        return jdbi.inTransaction(handle -> {
+            OmRoleDao dao = handle.attach(OmRoleDao.class);
+            Optional<OmRoleRow> before = dao.findByOmId(mirror.omRoleId());
+
+            int n = dao.upsertByOmId(
+                    mirror.omRoleId(),
+                    mirror.name(),
+                    mirror.displayName(),
+                    mirror.description());
+            if (n == 0) {
+                throw new IllegalStateException(
+                        "UPSERT catalog.om_role returned 0 rows для om_role_id=" + mirror.omRoleId());
+            }
+
+            OmRoleRow after = dao.findByOmId(mirror.omRoleId()).orElseThrow();
+            MirrorOp op;
+            if (before.isEmpty()) {
+                op = MirrorOp.CREATED;
+            } else if (before.get().deletedAt() != null) {
+                op = MirrorOp.RESURRECTED;
+            } else if (sameRoleFields(before.get(), after)) {
+                op = MirrorOp.UNCHANGED;
+            } else {
+                op = MirrorOp.UPDATED;
+            }
+            return new RoleMirrorResult(after.id(), after.omRoleId(), op);
+        });
+    }
+
+    private static boolean sameRoleFields(OmRoleRow a, OmRoleRow b) {
+        return java.util.Objects.equals(a.name(), b.name())
+                && java.util.Objects.equals(a.displayName(), b.displayName())
+                && java.util.Objects.equals(a.description(), b.description());
     }
 
     @Override
