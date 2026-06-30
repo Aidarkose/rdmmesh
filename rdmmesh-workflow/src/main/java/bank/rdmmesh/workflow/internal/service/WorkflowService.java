@@ -182,6 +182,27 @@ public final class WorkflowService {
         WorkflowGraph graph = resolveGraph(codeSet.domainId());
         Decision decision = StateMachine.validate(req, graph);
 
+        // Phase 3: owner аппрувит только справочники своего домена и доменов ниже по
+        // иерархии. Гейт на owner-approval (decision.setApprover()) активен ЛИШЬ когда у
+        // домена (или предка) определён владелец в справочнике — до наполнения
+        // directory/OM остаёмся пермиссивными (bootstrap, иначе блокировали бы все
+        // approve до синка). Не применяется к per-asset владельцу (asset OWNER) и RDM_ADMIN.
+        if (decision.setApprover()
+                && !assetRoles.contains("OWNER")
+                && !baseRoles.contains("RDM_ADMIN")
+                && approverDirectory.resolveWithFallback(
+                                codeSet.domainId(),
+                                bank.rdmmesh.api.port.ApproverDirectoryPort.BUSINESS_OWNER)
+                        .isPresent()
+                && !approverDirectory.isAuthorizedInSubtree(
+                        codeSet.domainId(),
+                        bank.rdmmesh.api.port.ApproverDirectoryPort.BUSINESS_OWNER,
+                        actor)) {
+            throw new bank.rdmmesh.api.port.WorkflowPort.InsufficientRoleException(
+                    "OWNER-approve разрешён только владельцу домена справочника"
+                            + " или домена выше по иерархии (Phase 3)");
+        }
+
         TransitionEffect effect = new TransitionEffect(
                 decision.recordReviewer(), decision.setApprover());
 

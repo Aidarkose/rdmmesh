@@ -8,6 +8,7 @@ import org.jdbi.v3.core.Jdbi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import bank.rdmmesh.api.port.ApproverDirectoryPort;
 import bank.rdmmesh.api.port.OwnershipPort;
 import bank.rdmmesh.catalog.internal.dao.CodeSetDao;
 import bank.rdmmesh.catalog.internal.dao.CodeSetSchemaDao;
@@ -32,10 +33,13 @@ public final class CatalogService {
 
     private final Jdbi jdbi;
     private final OwnershipPort ownership;
+    private final ApproverDirectoryPort approverDirectory;
 
-    public CatalogService(Jdbi jdbi, OwnershipPort ownership) {
+    public CatalogService(
+            Jdbi jdbi, OwnershipPort ownership, ApproverDirectoryPort approverDirectory) {
         this.jdbi = jdbi;
         this.ownership = ownership;
+        this.approverDirectory = approverDirectory;
     }
 
     // ── Domain ──────────────────────────────────────────────────────────────────
@@ -163,8 +167,18 @@ public final class CatalogService {
                     req.initialSchemaJson() == null ? "{}" : req.initialSchemaJson(),
                     createdBy);
 
-            // Provisional owner — bootstrap до прихода реального owner'а из OM webhook'а.
-            ownership.assignProvisionalOwner(codeSetId, "CODESET", createdBy);
+            // Phase 3: default-владелец справочника = владелец домена с подъёмом по
+            // иерархии (domain owner → ancestor domain owner), а НЕ создатель —
+            // создатель теперь стьюард, делать его asset-OWNER нельзя (иначе он стал бы
+            // единственным кандидатом на owner-approve и блокировался self-approval'ом,
+            // а routing-fallback на доменного владельца не сработал бы). Реальный
+            // per-asset owner придёт из OM после публикации (is_provisional=false).
+            // Если владелец домена не определён (bootstrap до синка OM) — provisional не
+            // ставим: routing OWNER-задачи всё равно резолвит владельца динамически.
+            approverDirectory
+                    .resolveWithFallback(req.domainId(), ApproverDirectoryPort.BUSINESS_OWNER)
+                    .ifPresent(owner -> ownership.assignProvisionalOwner(
+                            codeSetId, "CODESET", owner.omUserId()));
 
             log.info("catalog: создан code_set id={} domain_id={} name={} created_by={}",
                     codeSetId, req.domainId(), req.name(), createdBy);

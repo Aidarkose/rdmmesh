@@ -2,6 +2,7 @@ package bank.rdmmesh.catalog;
 
 import org.jdbi.v3.core.Jdbi;
 
+import bank.rdmmesh.api.port.ApproverDirectoryPort;
 import bank.rdmmesh.api.port.CatalogMirrorPort;
 import bank.rdmmesh.api.port.CatalogReadPort;
 import bank.rdmmesh.api.port.OwnershipPort;
@@ -21,8 +22,9 @@ public final class CatalogModule {
 
     private CatalogModule() {}
 
-    public static Resources build(Jdbi jdbi, OwnershipPort ownershipPort) {
-        CatalogService service = new CatalogService(jdbi, ownershipPort);
+    public static Resources build(
+            Jdbi jdbi, OwnershipPort ownershipPort, ApproverDirectoryPort approverDirectory) {
+        CatalogService service = new CatalogService(jdbi, ownershipPort, approverDirectory);
         return new Resources(
                 new DomainResource(service),
                 new CodeSetResource(service),
