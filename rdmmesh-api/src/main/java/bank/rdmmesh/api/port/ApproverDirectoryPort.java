@@ -63,6 +63,13 @@ public interface ApproverDirectoryPort {
     int reload(List<DirectoryEntry> entries);
 
     /**
+     * То же, что {@link #reload(List)}, но с явным {@code source} строк
+     * ({@code LOCAL_SEED} | {@code OM_GENERATED} | {@code RDM_ADMIN_LOCAL}) —
+     * для аудита источника справочника. Phase 4: OM-синк помечает {@code OM_GENERATED}.
+     */
+    int reload(List<DirectoryEntry> entries, String source);
+
+    /**
      * Адресное добавление одного согласующего для конкретного домена по
      * {@code domainId} (источник {@code RDM_ADMIN_LOCAL}). В отличие от
      * {@link #reload}, не резолвит {@code om_domain_id} и ничего не стирает —

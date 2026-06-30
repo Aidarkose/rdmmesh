@@ -52,16 +52,26 @@ public final class OpenMetadataCatalogClient {
         this.json = new ObjectMapper();
     }
 
+    /** Ссылка на OM-пользователя (owner/expert домена) — для domain_role_directory. */
+    public record OmUserRef(String id, String name, String displayName, String type) {}
+
     /**
      * Сущность OM (домен или роль) в форме, достаточной для зеркала. {@code parentId} —
      * om_domain_id родителя для поддомена (только у доменов; null у ролей и корневых доменов).
+     * {@code owners}/{@code experts} — владельцы и эксперты(дата-стьюарды) домена из OM
+     * (только у доменов; пусто у ролей) для наполнения справочника ролей домена (Phase 4).
      */
     public record OmEntity(
-            String id, String name, String displayName, String description, String parentId) {}
+            String id, String name, String displayName, String description, String parentId,
+            List<OmUserRef> owners, List<OmUserRef> experts) {}
 
-    /** Список всех доменов OM (с parent для иерархии). Пустой список при ошибке (с warn). */
+    /**
+     * Список всех доменов OM (с parent для иерархии + owners/experts для directory).
+     * Пустой список при ошибке (с warn).
+     */
     public List<OmEntity> listDomains() {
-        return list("api/v1/domains?fields=description,parent&limit=" + PAGE_LIMIT, "domains");
+        return list("api/v1/domains?fields=description,parent,owners,experts&limit="
+                + PAGE_LIMIT, "domains");
     }
 
     /** Список всех ролей OM. Пустой список при ошибке (с warn). */
@@ -101,7 +111,8 @@ public final class OpenMetadataCatalogClient {
                 // parent.id — om_domain_id родителя у поддомена (у ролей/корней узла нет).
                 String parentId = text(n.path("parent"), "id");
                 out.add(new OmEntity(
-                        id, name, text(n, "displayName"), text(n, "description"), parentId));
+                        id, name, text(n, "displayName"), text(n, "description"), parentId,
+                        userRefs(n.path("owners")), userRefs(n.path("experts"))));
             }
             log.info("OM: pull {} — получено {}", what, out.size());
             return out;
@@ -113,6 +124,23 @@ public final class OpenMetadataCatalogClient {
             log.warn("OM: pull {} не удался: {}", what, e.toString());
             return List.of();
         }
+    }
+
+    /** Парс массива entityReference (owners/experts) в список {@link OmUserRef}. */
+    private static List<OmUserRef> userRefs(JsonNode arr) {
+        if (arr == null || !arr.isArray() || arr.isEmpty()) {
+            return List.of();
+        }
+        List<OmUserRef> out = new ArrayList<>(arr.size());
+        for (JsonNode n : arr) {
+            String id = text(n, "id");
+            String name = text(n, "name");
+            if (id == null || name == null) {
+                continue;
+            }
+            out.add(new OmUserRef(id, name, text(n, "displayName"), text(n, "type")));
+        }
+        return out;
     }
 
     private static String text(JsonNode n, String field) {

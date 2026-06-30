@@ -241,7 +241,7 @@ public final class RdmmeshApplication extends Application<RdmmeshConfiguration> 
         // Регистрируется только если OM сконфигурирован (RDM_OM_BASE_URL/BOT_TOKEN).
         var omCfg = config.getOpenmetadata();
         OwnershipModule.buildCatalogSyncResource(
-                        omWebhookKey, catalogMirror,
+                        omWebhookKey, catalogMirror, approverDirectory,
                         omCfg.getBaseUrl(), omCfg.getBotToken(),
                         omCfg.getConnectTimeout(), omCfg.getRequestTimeout())
                 .ifPresent(environment.jersey()::register);

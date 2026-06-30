@@ -69,6 +69,12 @@ public final class PostgresApproverDirectoryPort implements ApproverDirectoryPor
 
     @Override
     public int reload(List<DirectoryEntry> entries) {
+        return reload(entries, "LOCAL_SEED");
+    }
+
+    @Override
+    public int reload(List<DirectoryEntry> entries, String source) {
+        String src = source == null || source.isBlank() ? "LOCAL_SEED" : source;
         List<DirectoryEntry> safe = entries == null ? List.of() : entries;
         int inserted = jdbi.inTransaction(handle -> {
             DomainRoleDirectoryDao dao = handle.attach(DomainRoleDirectoryDao.class);
@@ -84,12 +90,12 @@ public final class PostgresApproverDirectoryPort implements ApproverDirectoryPor
                         e.omUserId(),
                         e.username() == null ? e.omUserId().toString() : e.username(),
                         e.displayName(),
-                        "LOCAL_SEED");
+                        src);
             }
             return n;
         });
         log.info("domain_role_directory reload: {} entries received, {} rows inserted "
-                + "(full replace, BR-22)", safe.size(), inserted);
+                + "(full replace, source={}, BR-22)", safe.size(), inserted, src);
         return inserted;
     }
 

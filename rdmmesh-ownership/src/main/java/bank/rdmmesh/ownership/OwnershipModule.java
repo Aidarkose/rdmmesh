@@ -97,6 +97,7 @@ public final class OwnershipModule {
     public static Optional<CatalogSyncWebhookResource> buildCatalogSyncResource(
             SigningKeyPort omWebhookKey,
             CatalogMirrorPort catalogMirror,
+            ApproverDirectoryPort directory,
             String omBaseUrl,
             String omBotToken,
             Duration connectTimeout,
@@ -107,7 +108,7 @@ public final class OwnershipModule {
         }
         var client = new OpenMetadataCatalogClient(
                 omBaseUrl, omBotToken, connectTimeout, requestTimeout);
-        var service = new CatalogSyncService(client, catalogMirror);
+        var service = new CatalogSyncService(client, catalogMirror, directory);
         var hmac = new HmacVerifier(omWebhookKey);
         return Optional.of(new CatalogSyncWebhookResource(hmac, service));
     }
