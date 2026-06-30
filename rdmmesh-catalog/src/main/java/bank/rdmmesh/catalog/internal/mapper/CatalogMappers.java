@@ -55,6 +55,9 @@ public final class CatalogMappers {
         // он NULL до явной линковки с OM. Старый маппер звал .toString() безусловно
         // и падал NPE на таких строках, валя GET /domains для всех пользователей.
         d.setOmDomainId(row.omDomainId() == null ? null : row.omDomainId().toString());
+        // Иерархия доменов (Phase 2): om_domain_id родителя, NULL у корневого домена.
+        d.setParentOmDomainId(
+                row.parentOmDomainId() == null ? null : row.parentOmDomainId().toString());
         d.setName(row.name());
         d.setDisplayName(row.displayName());
         d.setDescription(row.description());

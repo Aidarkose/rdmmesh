@@ -9,6 +9,7 @@
   "properties": {
     "id": { "$ref": "../common/types.json#/definitions/uuid" },
     "om_domain_id": { "$ref": "../common/types.json#/definitions/om_domain_id" },
+    "parent_om_domain_id": { "$ref": "../common/types.json#/definitions/om_domain_id" },
     "name": { "$ref": "../common/types.json#/definitions/qualified_name" },
     "display_name": { "type": "string", "maxLength": 256 },
     "description": { "type": "string" },

@@ -34,6 +34,8 @@ export interface LocalizedLabel {
 export interface Domain {
   id: string;
   om_domain_id: string;
+  // Иерархия доменов (Phase 2): om_domain_id родителя, null/undefined у корневого домена.
+  parent_om_domain_id?: string | null;
   name: string;
   display_name?: string | null;
   description?: string | null;
