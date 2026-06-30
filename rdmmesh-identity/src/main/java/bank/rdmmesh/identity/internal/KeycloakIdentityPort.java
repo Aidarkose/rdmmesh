@@ -101,16 +101,24 @@ public final class KeycloakIdentityPort implements IdentityPort {
             return new AuthenticatedUser(omUserId, keycloakSub, username, resolved.groups());
         }
 
-        // Первый логин под этим objectGUID: нет роли в OM → viewer (om_user_id=NULL).
-        UUID omUserId = lookupOmUserId(username).orElse(null);
+        // object_guid не найден: либо новый пользователь, либо legacy-строка по username
+        // (бэкофилл V051). upsert реконсилирует по username — проставляет object_guid и
+        // СОХРАНЯЕТ уже привязанный om_user_id (COALESCE не затирает NULL'ом). Перечитываем
+        // строку, чтобы вернуть фактический om_user_id из БД, а не предполагаемый из lookup'а
+        // (иначе principal и БД разойдутся на первом логине после миграции).
+        final UUID omFromLookup = lookupOmUserId(username).orElse(null);
         jdbi.useExtension(UserMappingDao.class, dao -> dao.upsert(
                 objectGuid,
-                omUserId,
+                omFromLookup,
                 keycloakSub,
                 username,
                 resolved.email(),
                 resolved.displayName()));
-        log.info("identity: новый пользователь username={} object_guid={} om_user_id={}",
+        UUID omUserId = jdbi.withExtension(UserMappingDao.class,
+                        dao -> dao.findByObjectGuid(objectGuid))
+                .map(UserMappingRow::omUserId)
+                .orElse(omFromLookup);
+        log.info("identity: новый/реанкор username={} object_guid={} om_user_id={}",
                 username, objectGuid, omUserId);
         return new AuthenticatedUser(omUserId, keycloakSub, username, resolved.groups());
     }
