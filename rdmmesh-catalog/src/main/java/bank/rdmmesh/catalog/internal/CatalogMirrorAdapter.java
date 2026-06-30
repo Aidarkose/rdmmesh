@@ -42,6 +42,7 @@ public final class CatalogMirrorAdapter implements CatalogMirrorPort {
 
         int n = dao.upsertByOmId(
                 mirror.omDomainId(),
+                mirror.parentOmDomainId(),
                 mirror.name(),
                 mirror.displayName(),
                 mirror.description(),
@@ -121,7 +122,8 @@ public final class CatalogMirrorAdapter implements CatalogMirrorPort {
     }
 
     private static boolean sameMutableFields(DomainRow a, DomainRow b) {
-        return java.util.Objects.equals(a.name(), b.name())
+        return java.util.Objects.equals(a.parentOmDomainId(), b.parentOmDomainId())
+                && java.util.Objects.equals(a.name(), b.name())
                 && java.util.Objects.equals(a.displayName(), b.displayName())
                 && java.util.Objects.equals(a.description(), b.description())
                 && java.util.Objects.equals(a.labelRu(), b.labelRu())

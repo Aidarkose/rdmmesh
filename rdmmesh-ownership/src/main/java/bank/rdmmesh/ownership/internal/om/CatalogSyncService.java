@@ -52,9 +52,11 @@ public final class CatalogSyncService {
                 continue;
             }
             String displayName = d.displayName() != null ? d.displayName() : d.name();
+            // parentId из OM (null у корневых доменов / при невалидном UUID) → корневой домен.
+            UUID parentOmId = tryUuid(d.parentId());
             var res = catalogMirror.upsertDomainFromOm(new DomainMirror(
-                    omId, name, displayName, d.description(), null, null, new String[0]));
-            log.info("sync domain op={} om_id={} name={}", res.op(), omId, name);
+                    omId, parentOmId, name, displayName, d.description(), null, null, new String[0]));
+            log.info("sync domain op={} om_id={} parent={} name={}", res.op(), omId, parentOmId, name);
             dOk++;
         }
 

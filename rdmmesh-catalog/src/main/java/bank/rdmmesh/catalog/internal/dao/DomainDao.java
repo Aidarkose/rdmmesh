@@ -18,7 +18,7 @@ import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 public interface DomainDao {
 
     String COLUMNS =
-            "id, om_domain_id, name, display_name, description,"
+            "id, om_domain_id, parent_om_domain_id, name, display_name, description,"
                     + " label_ru, label_en, tags, created_at, updated_at, deleted_at";
 
     @SqlQuery("SELECT " + COLUMNS + " FROM catalog.domain ORDER BY name")
@@ -81,11 +81,15 @@ public interface DomainDao {
     @SqlUpdate(
             """
             INSERT INTO catalog.domain
-                (om_domain_id, name, display_name, description, label_ru, label_en, tags)
+                (om_domain_id, parent_om_domain_id, name, display_name, description,
+                 label_ru, label_en, tags)
             VALUES
-                (:omDomainId, :name, :displayName, :description, :labelRu, :labelEn, :tags)
+                (:omDomainId, :parentOmDomainId, :name, :displayName, :description,
+                 :labelRu, :labelEn, :tags)
             ON CONFLICT (om_domain_id) DO UPDATE
-              SET name         = EXCLUDED.name,
+              SET parent_om_domain_id =
+                      COALESCE(EXCLUDED.parent_om_domain_id, catalog.domain.parent_om_domain_id),
+                  name         = EXCLUDED.name,
                   display_name = EXCLUDED.display_name,
                   description  = EXCLUDED.description,
                   label_ru     = EXCLUDED.label_ru,
@@ -96,12 +100,54 @@ public interface DomainDao {
             """)
     int upsertByOmId(
             @Bind("omDomainId") UUID omDomainId,
+            @Bind("parentOmDomainId") UUID parentOmDomainId,
             @Bind("name") String name,
             @Bind("displayName") String displayName,
             @Bind("description") String description,
             @Bind("labelRu") String labelRu,
             @Bind("labelEn") String labelEn,
             @Bind("tags") String[] tags);
+
+    /**
+     * Все {@code om_domain_id} поддерева, укоренённого в {@code :rootOmId} (включая корень).
+     * Рекурсивный обход вниз по {@code parent_om_domain_id}; soft-deleted исключены.
+     * Phase 3: scope owner'а — аппрув в пределах своего поддерева доменов.
+     */
+    @SqlQuery(
+            """
+            WITH RECURSIVE subtree AS (
+                SELECT om_domain_id, parent_om_domain_id
+                  FROM catalog.domain
+                 WHERE om_domain_id = :rootOmId AND deleted_at IS NULL
+                UNION ALL
+                SELECT d.om_domain_id, d.parent_om_domain_id
+                  FROM catalog.domain d
+                  JOIN subtree s ON d.parent_om_domain_id = s.om_domain_id
+                 WHERE d.deleted_at IS NULL
+            )
+            SELECT om_domain_id FROM subtree
+            """)
+    List<UUID> descendantOmIds(@Bind("rootOmId") UUID rootOmId);
+
+    /**
+     * Цепочка предков домена {@code :omId} снизу вверх (БЕЗ самого домена), от ближайшего
+     * родителя к корню. Phase 3: fallback владельца — domain owner → ancestor domain owner.
+     */
+    @SqlQuery(
+            """
+            WITH RECURSIVE ancestors AS (
+                SELECT om_domain_id, parent_om_domain_id, 0 AS depth
+                  FROM catalog.domain
+                 WHERE om_domain_id = :omId
+                UNION ALL
+                SELECT p.om_domain_id, p.parent_om_domain_id, a.depth + 1
+                  FROM catalog.domain p
+                  JOIN ancestors a ON p.om_domain_id = a.parent_om_domain_id
+                 WHERE p.deleted_at IS NULL
+            )
+            SELECT om_domain_id FROM ancestors WHERE depth > 0 ORDER BY depth
+            """)
+    List<UUID> ancestorOmIds(@Bind("omId") UUID omId);
 
     @SqlUpdate(
             "UPDATE catalog.domain SET deleted_at = now(), updated_at = now()"
@@ -112,6 +158,7 @@ public interface DomainDao {
     record DomainRow(
             UUID id,
             UUID omDomainId,
+            UUID parentOmDomainId,
             String name,
             String displayName,
             String description,

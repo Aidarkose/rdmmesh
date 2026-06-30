@@ -52,12 +52,16 @@ public final class OpenMetadataCatalogClient {
         this.json = new ObjectMapper();
     }
 
-    /** Сущность OM (домен или роль) в форме, достаточной для зеркала. */
-    public record OmEntity(String id, String name, String displayName, String description) {}
+    /**
+     * Сущность OM (домен или роль) в форме, достаточной для зеркала. {@code parentId} —
+     * om_domain_id родителя для поддомена (только у доменов; null у ролей и корневых доменов).
+     */
+    public record OmEntity(
+            String id, String name, String displayName, String description, String parentId) {}
 
-    /** Список всех доменов OM. Пустой список при ошибке (с warn). */
+    /** Список всех доменов OM (с parent для иерархии). Пустой список при ошибке (с warn). */
     public List<OmEntity> listDomains() {
-        return list("api/v1/domains?fields=description&limit=" + PAGE_LIMIT, "domains");
+        return list("api/v1/domains?fields=description,parent&limit=" + PAGE_LIMIT, "domains");
     }
 
     /** Список всех ролей OM. Пустой список при ошибке (с warn). */
@@ -94,7 +98,10 @@ public final class OpenMetadataCatalogClient {
                     log.warn("OM: {} запись без id/name пропущена", what);
                     continue;
                 }
-                out.add(new OmEntity(id, name, text(n, "displayName"), text(n, "description")));
+                // parent.id — om_domain_id родителя у поддомена (у ролей/корней узла нет).
+                String parentId = text(n.path("parent"), "id");
+                out.add(new OmEntity(
+                        id, name, text(n, "displayName"), text(n, "description"), parentId));
             }
             log.info("OM: pull {} — получено {}", what, out.size());
             return out;

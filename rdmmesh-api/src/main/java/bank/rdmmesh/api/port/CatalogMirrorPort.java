@@ -47,6 +47,7 @@ public interface CatalogMirrorPort {
      */
     record DomainMirror(
             UUID omDomainId,
+            UUID parentOmDomainId,
             String name,
             String displayName,
             String description,

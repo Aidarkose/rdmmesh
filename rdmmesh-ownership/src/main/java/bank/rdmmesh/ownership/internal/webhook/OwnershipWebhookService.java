@@ -108,8 +108,12 @@ public final class OwnershipWebhookService {
             return new TxResult(new Result(Outcome.BAD_REQUEST, event.getEventId(), null, null,
                     "не удалось определить name domain'а — fully_qualified_name пуст"), null);
         }
+        // parent не приходит в ownership-ChangeEvent → null. Иерархию ведёт authoritative
+        // catalog-sync pull (CatalogSyncService); upsert COALESCE'ит parent, поэтому этот
+        // путь не затирает уже синхронизированного родителя.
         var mirror = new CatalogMirrorPort.DomainMirror(
                 omDomainId,
+                /* parentOmDomainId */ null,
                 domainName,
                 /* displayName */ null,
                 /* description */ null,
