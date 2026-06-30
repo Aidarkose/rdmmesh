@@ -49,6 +49,25 @@ public final class PostgresApproverDirectoryPort implements ApproverDirectoryPor
     }
 
     @Override
+    public java.util.Optional<Approver> resolveWithFallback(UUID domainId, String role) {
+        if (domainId == null || role == null) {
+            return java.util.Optional.empty();
+        }
+        return jdbi.withExtension(DomainRoleDirectoryDao.class,
+                        d -> d.resolveWithFallback(domainId, role))
+                .map(r -> new Approver(r.omUserId(), r.username(), r.displayName(), r.role()));
+    }
+
+    @Override
+    public boolean isAuthorizedInSubtree(UUID domainId, String role, UUID omUserId) {
+        if (domainId == null || role == null || omUserId == null) {
+            return false;
+        }
+        return jdbi.withExtension(DomainRoleDirectoryDao.class,
+                d -> d.isAuthorizedInSubtree(domainId, role, omUserId).isPresent());
+    }
+
+    @Override
     public int reload(List<DirectoryEntry> entries) {
         List<DirectoryEntry> safe = entries == null ? List.of() : entries;
         int inserted = jdbi.inTransaction(handle -> {

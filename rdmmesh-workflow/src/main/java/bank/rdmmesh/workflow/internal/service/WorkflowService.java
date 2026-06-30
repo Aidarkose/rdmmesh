@@ -210,6 +210,23 @@ public final class WorkflowService {
         } else if (route.isPresent() && "STEWARD".equals(nextRole)) {
             candidates = new UUID[] { route.get().stewardUserId() };
             assignedRole = bank.rdmmesh.api.port.ApproverDirectoryPort.STEWARD;
+        } else if ("OWNER".equals(nextRole)) {
+            // Phase 3: автоматический routing STEWARD→OWNER без явного маршрута.
+            // Кандидат-владелец — per-asset owner (после публикации приходит из OM),
+            // иначе доменный владелец с подъёмом по иерархии (domain owner →
+            // ancestor domain owner) через ApproverDirectoryPort.resolveWithFallback.
+            UUID[] perAsset = candidatesFor(version.codesetId(), nextRole);
+            if (perAsset.length > 0) {
+                candidates = perAsset;
+                assignedRole = null;
+            } else {
+                candidates = approverDirectory
+                        .resolveWithFallback(codeSet.domainId(),
+                                bank.rdmmesh.api.port.ApproverDirectoryPort.BUSINESS_OWNER)
+                        .map(a -> new UUID[] { a.omUserId() })
+                        .orElseGet(() -> new UUID[0]);
+                assignedRole = bank.rdmmesh.api.port.ApproverDirectoryPort.BUSINESS_OWNER;
+            }
         } else {
             candidates = candidatesFor(version.codesetId(), nextRole);
             assignedRole = null;

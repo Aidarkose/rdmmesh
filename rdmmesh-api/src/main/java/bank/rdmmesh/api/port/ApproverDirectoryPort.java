@@ -1,6 +1,7 @@
 package bank.rdmmesh.api.port;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -34,6 +35,21 @@ public interface ApproverDirectoryPort {
      * иначе фильтр по STEWARD/BUSINESS_OWNER. Для UI submit-диалога.
      */
     List<Approver> approversOf(UUID domainId, String role);
+
+    /**
+     * Резолв держателя роли {@code role} с подъёмом по иерархии доменов (Phase 3):
+     * от {@code domainId} вверх по предкам — ближайший держатель роли. Доменный
+     * fallback владельца (domain owner → ancestor domain owner). Пусто, если по всей
+     * цепочке предков держателя роли нет.
+     */
+    Optional<Approver> resolveWithFallback(UUID domainId, String role);
+
+    /**
+     * Авторизован ли {@code omUserId} как держатель роли {@code role} для домена
+     * {@code domainId} ИЛИ любого его предка (Phase 3: owner аппрувит справочники
+     * своего домена и доменов ниже по иерархии).
+     */
+    boolean isAuthorizedInSubtree(UUID domainId, String role, UUID omUserId);
 
     /**
      * Полная замена справочника: {@code TRUNCATE} + {@code INSERT} всех

@@ -101,5 +101,64 @@ public interface DomainRoleDirectoryDao {
             @Bind("domainId") UUID domainId,
             @Bind("role") String role);
 
+    /**
+     * Резолв роли домена с подъёмом по иерархии (Phase 3). Идём от {@code :domainId}
+     * вверх по предкам ({@code catalog.domain.parent_om_domain_id}) и возвращаем
+     * <b>ближайшего</b> держателя роли {@code :role}. Используется для доменного
+     * fallback владельца: per-asset owner → domain owner → ancestor domain owner.
+     */
+    @SqlQuery(
+            """
+            WITH RECURSIVE chain AS (
+                SELECT id, om_domain_id, parent_om_domain_id, 0 AS depth
+                  FROM catalog.domain
+                 WHERE id = :domainId AND deleted_at IS NULL
+                UNION ALL
+                SELECT p.id, p.om_domain_id, p.parent_om_domain_id, c.depth + 1
+                  FROM catalog.domain p
+                  JOIN chain c ON p.om_domain_id = c.parent_om_domain_id
+                 WHERE p.deleted_at IS NULL
+            )
+            SELECT dr.om_user_id, dr.username, dr.display_name, dr.role
+              FROM chain c
+              JOIN ownership.domain_role_directory dr ON dr.domain_id = c.id
+             WHERE dr.role = :role
+             ORDER BY c.depth, dr.username
+             LIMIT 1
+            """)
+    @RegisterConstructorMapper(ApproverRow.class)
+    Optional<ApproverRow> resolveWithFallback(
+            @Bind("domainId") UUID domainId,
+            @Bind("role") String role);
+
+    /**
+     * Авторизован ли {@code :omUserId} как держатель роли {@code :role} для домена
+     * {@code :domainId} ИЛИ любого его предка (Phase 3: owner аппрувит справочники
+     * своего домена и доменов ниже по иерархии — codeset в домене X разрешён owner'у
+     * домена X или любого предка X). Возвращает 1, если найдено.
+     */
+    @SqlQuery(
+            """
+            WITH RECURSIVE chain AS (
+                SELECT id, om_domain_id, parent_om_domain_id
+                  FROM catalog.domain
+                 WHERE id = :domainId AND deleted_at IS NULL
+                UNION ALL
+                SELECT p.id, p.om_domain_id, p.parent_om_domain_id
+                  FROM catalog.domain p
+                  JOIN chain c ON p.om_domain_id = c.parent_om_domain_id
+                 WHERE p.deleted_at IS NULL
+            )
+            SELECT 1
+              FROM chain c
+              JOIN ownership.domain_role_directory dr ON dr.domain_id = c.id
+             WHERE dr.role = :role AND dr.om_user_id = :omUserId
+             LIMIT 1
+            """)
+    Optional<Integer> isAuthorizedInSubtree(
+            @Bind("domainId") UUID domainId,
+            @Bind("role") String role,
+            @Bind("omUserId") UUID omUserId);
+
     record ApproverRow(UUID omUserId, String username, String displayName, String role) {}
 }
