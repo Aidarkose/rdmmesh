@@ -154,10 +154,19 @@ public final class WorkflowService {
             }
         });
 
+        // Граф домена нужен и для валидации assignee (есть ли STEWARD-ступень), и
+        // ниже для StateMachine — резолвим один раз. ADR-0010 B2: per-domain BPMN,
+        // иначе дефолтный STEWARD→OWNER; resolveGraph fail-safe + re-validate инвариантов
+        // (defense-in-depth: даже tampered DB-row не ослабит no-bypass).
+        WorkflowGraph graph = resolveGraph(codeSet.domainId());
+        // Phase 3: в маршруте STEWARD(author+submit)→OWNER отдельной STEWARD-approve-
+        // ступени нет — steward-assignee инертен, проверки на него (в справочнике,
+        // ≠author) неуместны. Применяем их только если граф реально содержит STEWARD-этап.
+        boolean stewardStep = "STEWARD".equals(graph.nextRequiredRole(Status.IN_REVIEW));
         SubmitAssigneeHolder.Assignee assignee =
                 (to == Status.IN_REVIEW) ? SubmitAssigneeHolder.get() : null;
         if (assignee != null && approverDirectory != null) {
-            validateAssignee(assignee, codeSet.domainId(), version.createdBy());
+            validateAssignee(assignee, codeSet.domainId(), version.createdBy(), stewardStep);
         }
 
         // Stage 7: жёсткий гейт ссылочной целостности — нельзя отправить на ревью
@@ -175,11 +184,7 @@ public final class WorkflowService {
         StateMachine.Request req = new StateMachine.Request(
                 from, to, actor, version.createdBy(),
                 reviewers, assetRoles, baseRoles, comment);
-        // ADR-0010 B2: легальность проверяется против ГРАФА ДОМЕНА версии
-        // (per-domain BPMN), иначе дефолтный 4-eyes. resolveGraph fail-safe
-        // к дефолту + re-validate инвариантов (defense-in-depth: даже
-        // tampered DB-row не ослабит no-bypass).
-        WorkflowGraph graph = resolveGraph(codeSet.domainId());
+        // Легальность проверяется против ГРАФА ДОМЕНА версии (резолвлен выше).
         Decision decision = StateMachine.validate(req, graph);
 
         // Phase 3: owner аппрувит только справочники своего домена и доменов ниже по
@@ -361,21 +366,36 @@ public final class WorkflowService {
      * REST как 409 (IllegalStateTransition) / 409 (SelfApproval).
      */
     private void validateAssignee(
-            SubmitAssigneeHolder.Assignee a, UUID codeSetDomainId, UUID createdBy) {
-        if (a.stewardUserId() == null || a.ownerUserId() == null) {
+            SubmitAssigneeHolder.Assignee a, UUID codeSetDomainId, UUID createdBy,
+            boolean stewardStep) {
+        if (a.ownerUserId() == null) {
             throw new IllegalStateTransitionException(
-                    "submit требует assignee: steward и business-owner");
+                    "submit требует assignee: business-owner");
         }
         if (a.domainId() == null || !a.domainId().equals(codeSetDomainId)) {
             throw new IllegalStateTransitionException(
                     "assignee.domain_id не совпадает с доменом CodeSet'а");
         }
-        if (!approverDirectory.isAssignable(
-                codeSetDomainId,
-                bank.rdmmesh.api.port.ApproverDirectoryPort.STEWARD,
-                a.stewardUserId())) {
-            throw new IllegalStateTransitionException(
-                    "выбранный steward не значится в справочнике ролей домена");
+        // STEWARD-проверки — только если граф домена содержит STEWARD-approve-ступень
+        // (классический 4-eyes). В маршруте Phase 3 STEWARD(author+submit)→OWNER
+        // steward-assignee инертен: стьюард-автор сам направляет на согласование
+        // владельцу, отдельного steward-reviewer нет (см. validateAssignee callsite).
+        if (stewardStep) {
+            if (a.stewardUserId() == null) {
+                throw new IllegalStateTransitionException(
+                        "submit требует assignee: steward");
+            }
+            if (!approverDirectory.isAssignable(
+                    codeSetDomainId,
+                    bank.rdmmesh.api.port.ApproverDirectoryPort.STEWARD,
+                    a.stewardUserId())) {
+                throw new IllegalStateTransitionException(
+                        "выбранный steward не значится в справочнике ролей домена");
+            }
+            if (a.stewardUserId().equals(createdBy)) {
+                throw new bank.rdmmesh.api.port.WorkflowPort.SelfApprovalException(
+                        "Self-approval запрещён: steward-согласующий не может быть автором draft'а");
+            }
         }
         if (!approverDirectory.isAssignable(
                 codeSetDomainId,
@@ -384,9 +404,10 @@ public final class WorkflowService {
             throw new IllegalStateTransitionException(
                     "выбранный business-owner не значится в справочнике ролей домена");
         }
-        if (a.stewardUserId().equals(createdBy) || a.ownerUserId().equals(createdBy)) {
+        // 2-eyes: владелец-согласующий ≠ автор (для ЛЮБОГО маршрута).
+        if (a.ownerUserId().equals(createdBy)) {
             throw new bank.rdmmesh.api.port.WorkflowPort.SelfApprovalException(
-                    "Self-approval запрещён: согласующий не может быть автором draft'а");
+                    "Self-approval запрещён: владелец-согласующий не может быть автором draft'а");
         }
     }
 
@@ -395,15 +416,18 @@ public final class WorkflowService {
      * Граф топологии для домена версии (ADR-0010 B2). Активный шаблон с
      * {@code graph_json} → его граф; нет/NULL → дефолтный 4-eyes.
      *
+     * <p><b>Дефолт Phase 3.</b> Домен без кастомного шаблона → маршрут
+     * {@code STEWARD(author+submit) → OWNER} ({@link WorkflowGraph#defaultStewardOwner}).
      * <p><b>Fail-safe + defense-in-depth.</b> Любой сбой (битый/tampered
-     * JSON, не прошёл {@link WorkflowGraphInvariants}) → дефолтный
-     * 4-eyes (строжайший known-good — НЕ ослабление no-bypass). Инварианты
-     * прогоняются и на чтении, не только при деплое: подмена строки в БД
-     * не может ослабить 4-eyes в рантайме.
+     * JSON, не прошёл {@link WorkflowGraphInvariants}) → тот же дефолтный
+     * known-good маршрут. Пол no-bypass (2-eyes: {@code owner ≠ created_by})
+     * для ЛЮБОГО графа гарантирует OWNER-guard {@link StateMachine}, поэтому
+     * подмена строки в БД не может его ослабить. Инварианты прогоняются и на
+     * чтении, не только при деплое.
      */
     private WorkflowGraph resolveGraph(UUID domainId) {
         if (domainId == null) {
-            return WorkflowGraph.defaultFourEyes();
+            return WorkflowGraph.defaultStewardOwner();
         }
         try {
             String gj = jdbi.withExtension(WorkflowTemplateDao.class,
@@ -411,7 +435,7 @@ public final class WorkflowService {
                     .map(WorkflowTemplateDao.TemplateRow::graphJson)
                     .orElse(null);
             if (gj == null || gj.isBlank()) {
-                return WorkflowGraph.defaultFourEyes();
+                return WorkflowGraph.defaultStewardOwner();
             }
             WorkflowGraph g = WorkflowGraphCodec.fromJson(gj);
             WorkflowGraphInvariants.validate(g);
@@ -420,8 +444,8 @@ public final class WorkflowService {
             return g;
         } catch (RuntimeException e) {
             log.warn("workflow: per-domain graph load failed domain={} → "
-                    + "default 4-eyes (fail-safe): {}", domainId, e.toString());
-            return WorkflowGraph.defaultFourEyes();
+                    + "default STEWARD→OWNER (fail-safe): {}", domainId, e.toString());
+            return WorkflowGraph.defaultStewardOwner();
         }
     }
 

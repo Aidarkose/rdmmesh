@@ -19,19 +19,22 @@ import bank.rdmmesh.workflow.internal.WorkflowGraph.Kind;
  *
  * <h3>Теорема, которую доказывает валидатор</h3>
  * Достичь pre-publish-терминала {@code OWNER_APPROVED} нельзя, не пройдя
- * сперва STEWARD-approve-ребро, затем OWNER-approve-ребро. Runtime-guard'ы
- * {@link StateMachine#validate(StateMachine.Request, WorkflowGraph)} на
- * {@link Kind#STEWARD} ({@code actor ≠ created_by}) и {@link Kind#OWNER}
- * ({@code actor ≠ created_by} И {@code actor ∉ reviewers}) тогда
- * гарантируют, что это <b>три разных лица</b> (author, steward, owner) —
- * т.е. 4-eyes/self-approval сохраняются для ЛЮБОГО прошедшего графа.
+ * OWNER-approve-ребро. Runtime-guard {@link StateMachine#validate(
+ * StateMachine.Request, WorkflowGraph)} на {@link Kind#OWNER}
+ * ({@code actor ≠ created_by} И {@code actor ∉ reviewers}) гарантирует, что
+ * владелец — <b>иное лицо</b>, нежели автор (и любой steward-reviewer, если
+ * он был) — т.е. минимум <b>2-eyes</b> (author/steward ≠ owner) сохраняется
+ * для ЛЮБОГО прошедшего графа. Это согласованная модель Phase 3: маршрут
+ * строго {@code STEWARD(author+submit) → OWNER}, отдельная STEWARD-approve-
+ * ступень НЕ обязательна. Если граф её всё же содержит (классический 4-eyes),
+ * порядок review→approve сохраняется и независимых лиц становится три.
  *
  * <h3>Проверяемые инварианты</h3>
  * <ol>
  *   <li>{@code OWNER_APPROVED} достижим из {@code DRAFT} (есть путь);</li>
  *   <li>любой простой путь {@code DRAFT → OWNER_APPROVED} содержит
- *       STEWARD-approve-ребро (kind=STEWARD, !reject), затем — позже —
- *       OWNER-approve-ребро (kind=OWNER, !reject);</li>
+ *       OWNER-approve-ребро (kind=OWNER, !reject); если на пути есть
+ *       STEWARD-approve-ребро — OWNER идёт строго после него;</li>
  *   <li>каждое ребро c {@code to == OWNER_APPROVED} — kind OWNER, !reject
  *       <b>и {@code setApprover=true}</b> (approver фиксируется, иначе
  *       нарушается целостность подписи/аудита E6);</li>
@@ -108,15 +111,24 @@ public final class WorkflowGraphInvariants {
         for (List<EdgeSpec> path : paths) {
             int steward = firstIndex(path, Kind.STEWARD);
             int owner = lastIndex(path, Kind.OWNER);
-            if (steward < 0) {
+            // (2, Phase 3) OWNER-approve-ребро ОБЯЗАТЕЛЬНО на пути в терминал —
+            // независимость лиц (creator ≠ owner, т.е. 2-eyes) гарантирует
+            // OWNER-guard StateMachine (actor ≠ created_by). Маршрут
+            // STEWARD(author+submit) → OWNER легитимен и не содержит отдельного
+            // STEWARD-approve-ребра. Правило (3) уже гарантирует, что В терминал
+            // ведёт ТОЛЬКО OWNER-ребро, так что обойти OWNER-approve нельзя.
+            if (owner < 0) {
                 throw new IllegalArgumentException(
                         "Compliance: путь до " + APPROVAL_TERMINAL
-                                + " без STEWARD-approve-ребра — 4-eyes обойдён");
+                                + " без OWNER-approve-ребра — владелец не подтвердил");
             }
-            if (owner < 0 || owner <= steward) {
+            // Если граф ВСЁ ЖЕ содержит STEWARD-approve-ступень (классический
+            // 4-eyes), OWNER обязан идти ПОСЛЕ неё — порядок review→approve
+            // сохраняется (3-eyes для таких графов не деградирует).
+            if (steward >= 0 && owner <= steward) {
                 throw new IllegalArgumentException(
                         "Compliance: путь до " + APPROVAL_TERMINAL
-                                + " без OWNER-approve ПОСЛЕ STEWARD — 4-eyes обойдён");
+                                + " с OWNER-approve ДО STEWARD-approve — порядок 4-eyes нарушен");
             }
         }
     }

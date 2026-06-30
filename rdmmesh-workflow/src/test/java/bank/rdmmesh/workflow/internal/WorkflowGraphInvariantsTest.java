@@ -31,30 +31,35 @@ final class WorkflowGraphInvariantsTest {
     }
 
     @Test
-    void directOwnerEdgeSkippingStewardIsRejected() {
-        WorkflowGraph bad = WorkflowGraph.builder()
-                .edge(Status.DRAFT, Status.OWNER_APPROVED,
+    void stewardOwnerTwoEyesIsCompliant() {
+        // Phase 3: маршрут STEWARD(author+submit) → OWNER без отдельной
+        // STEWARD-approve-ступени compliant (2-eyes: owner ≠ created_by).
+        assertThat(WorkflowGraphInvariants.isValid(WorkflowGraph.defaultStewardOwner()))
+                .isTrue();
+        // Минимальный прямой OWNER-маршрут тоже 2-eyes-compliant: в терминал
+        // ведёт OWNER-ребро, независимость лиц гарантирует OWNER-guard.
+        WorkflowGraph direct = WorkflowGraph.builder()
+                .edge(Status.DRAFT, Status.IN_REVIEW,
+                        Action.submit, Kind.SUBMIT, false, false, false)
+                .edge(Status.IN_REVIEW, Status.OWNER_APPROVED,
                         Action.owner_approve, Kind.OWNER, false, false, true)
                 .build();
-        assertThatThrownBy(() -> WorkflowGraphInvariants.validate(bad))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("STEWARD");
+        assertThat(WorkflowGraphInvariants.isValid(direct)).isTrue();
     }
 
     @Test
-    void fakeStewardOfWrongKindIsRejected() {
-        // «steward»-ступень смоделирована как SUBMIT — обход 4-eyes.
+    void stewardKindEdgeIntoTerminalIsRejected() {
+        // Правило (3): в OWNER_APPROVED ведёт ТОЛЬКО OWNER-ребро. STEWARD-ребро
+        // в терминал недопустимо (иначе owner-approve/подпись подменяются).
         WorkflowGraph bad = WorkflowGraph.builder()
                 .edge(Status.DRAFT, Status.IN_REVIEW,
                         Action.submit, Kind.SUBMIT, false, false, false)
-                .edge(Status.IN_REVIEW, Status.STEWARD_APPROVED,
-                        Action.submit, Kind.SUBMIT, false, false, false)
-                .edge(Status.STEWARD_APPROVED, Status.OWNER_APPROVED,
-                        Action.owner_approve, Kind.OWNER, false, false, true)
+                .edge(Status.IN_REVIEW, Status.OWNER_APPROVED,
+                        Action.steward_approve, Kind.STEWARD, false, true, false)
                 .build();
         assertThatThrownBy(() -> WorkflowGraphInvariants.validate(bad))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("STEWARD");
+                .hasMessageContaining(Status.OWNER_APPROVED.name());
     }
 
     @Test

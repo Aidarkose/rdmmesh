@@ -80,6 +80,30 @@ public final class WorkflowGraph {
                 .build();
     }
 
+    /**
+     * Маршрут Phase 3: {@code STEWARD(author+submit) → OWNER} без отдельной
+     * STEWARD-approve-ступени. Драфт создаёт и направляет на согласование
+     * стьюард-автор (submit), владелец домена подтверждает напрямую
+     * ({@code IN_REVIEW → OWNER_APPROVED}). 2-eyes гарантирует OWNER-guard
+     * ({@code owner ≠ created_by}); STEWARD_APPROVED в маршруте не участвует.
+     * Проходит {@link WorkflowGraphInvariants} (OWNER-ребро в терминал есть,
+     * отдельный STEWARD-этап не обязателен).
+     */
+    public static WorkflowGraph defaultStewardOwner() {
+        return builder()
+                .edge(Status.DRAFT, Status.IN_REVIEW,
+                        Action.submit, Kind.SUBMIT, false, false, false)
+                .edge(Status.IN_REVIEW, Status.OWNER_APPROVED,
+                        Action.owner_approve, Kind.OWNER, false, false, true)
+                .edge(Status.IN_REVIEW, Status.DRAFT,
+                        Action.owner_reject, Kind.OWNER, true, false, false)
+                .edge(Status.OWNER_APPROVED, Status.PUBLISHED,
+                        Action.publish, Kind.SYSTEM, false, false, false)
+                .edge(Status.PUBLISHED, Status.DEPRECATED,
+                        Action.deprecate, Kind.SYSTEM, false, false, false)
+                .build();
+    }
+
     public Optional<EdgeSpec> edge(Status from, Status to) {
         return Optional.ofNullable(edges.get(new Edge(from, to)));
     }
