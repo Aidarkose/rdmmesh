@@ -6,11 +6,11 @@
 > `project_identity_role_redesign` (auto-memory).
 >
 > **Дата.** 2026-06-27 (Phase 1), обновлено 2026-06-30 (Phases 2–4 — см. §10 ниже).
-> **Состояние (на 2026-06-30).** Phases **1, 2, 3 и 4(A+B)** — реализованы, закоммичены,
+> **Состояние (на 2026-06-30).** Phases **1, 2, 3, 4(A+B) и 4(C)** — реализованы, закоммичены,
 > запушены (GitHub `Aidarkose/rdmmesh` + локальный GitLab `root/rdmmesh`) **и задеплоены**
-> (rebuild+recreate, healthy). e2e пройдены (см. §10). Остаётся только Phase **4(C)** —
-> нативная OM Event Subscription (конфиг на стороне OM). **Свежему агенту: читать §10 —
-> там актуальное состояние; §1–9 ниже — исходный контекст Phase 1.**
+> (rebuild+recreate, healthy). e2e пройдены (см. §10). **Редизайн завершён**: нативная OM
+> Event Subscription авто-пропагирует изменения домена/owner из UI OM в rdmmesh (§10.6).
+> **Свежему агенту: читать §10 — там актуальное состояние; §1–9 ниже — исходный контекст Phase 1.**
 > **Ветка.** `feat/om-rdmmesh-sync`. Ключевые коммиты: Phase 1 `4f58f2b`/`6454e0c`;
 > Phase 2 `beb8feb`+`3d1671c`; Phase 3 `bd6c8ff`+`a4bbf06`+`3a510ae`; Phase 4 `06b5aac`.
 
@@ -266,7 +266,8 @@ db `rdmmesh`. Источники: `docker/docker-compose.yml`, `docker/postgres/
   `STEWARD(author+submit) → OWNER`** (2-eyes, без второго стьюарда; ослаблён no-bypass-инвариант).
 - **Phase 4(A+B)** — `domain_role_directory` и `om_user_id` теперь из **OM** (реальные OM-id) —
   **конец дрейфа identity**, ради которого всё затевалось.
-- Осталось: **Phase 4(C)** — нативная OM Event Subscription (конфиг в OM).
+- **Phase 4(C)** — нативная OM Event Subscription (Webhook) **готова и проверена** (§10.6):
+  изменение домена/эксперта в UI OM авто-пропагируется в rdmmesh за ~4с. **Редизайн завершён.**
 
 ### 10.1 Phase 2 — иерархия доменов (`beb8feb` + хвост `3d1671c`)
 - Миграция `bootstrap/sql/migrations/catalog/V018__domain_hierarchy.sql`: `catalog.domain.parent_om_domain_id uuid` (NULL=корень, хранится по OM-id, без FK) + index.
@@ -310,8 +311,12 @@ db `rdmmesh`. Источники: `docker/docker-compose.yml`, `docker/postgres/
 - **NB про очистку:** создание справочника провижнит relational physical-таблицы `rd_data.{domain}__{name}__{current,draft,history}` + строку `authoring.codeset_physical_table` (unique по schema/table). При повторных e2e их НАДО чистить (`DROP TABLE rd_data.…` + `DELETE FROM authoring.codeset_physical_table`), иначе следующий `createDraft` падает **500 duplicate key**.
 - **Таблицы для cleanup:** `workflow.{approval_task,version_route,workflow_transition}`, `authoring.{code_set_version_reviewer,code_set_version,codeset_physical_table}`, `rd_data.*` (DROP), `ownership.rdm_asset_ownership`, `catalog.{code_set_schema,code_set}`.
 
-### 10.6 Что осталось — Phase 4(C)
-- Настроить в OM **нативный Alert/Event Subscription** (Observability/Alerts), который при изменении домена/owner шлёт уведомление на `https://<rdmmesh>/api/v1/webhooks/om/catalog-sync` (сейчас триггер ручной). Приёмник (`CatalogSyncWebhookResource`, HMAC-проверка) уже готов. Это конфиг **на стороне OM** (vanilla, без патчей — см. memory `feedback_no_om_modifications`).
+### 10.6 Phase 4(C) — нативная OM Event Subscription: ГОТОВА и ПРОВЕРЕНА (2026-06-30)
+- **Нативный механизм = OM Event Subscription** (настраивается в **UI OM**: Settings → Alerts/Notifications), НЕ rdmmesh-эндпоинт. `POST /api/v1/webhooks/om/catalog-sync` — это **приёмник на стороне rdmmesh** (`CatalogSyncWebhookResource`, HMAC опционален; ручной `curl` на него — лишь симуляция нативного триггера).
+- В OM **уже создана** подписка `Domain_and_Roles_sync_for_RDMmesh` (alertType=Notification, `enabled:true`): destination **Webhook** → `http://rdmmesh-service:8080/api/v1/webhooks/om/catalog-sync` (по mesh-net; om-server резолвит `rdmmesh-service`). `filteringRules.resources=["all"]`, `pollInterval=10s`, `retries=3`.
+- **Проверено вживую (пользовательский сценарий через UI OM):** `PATCH /api/v1/domains/{ECL}` (= действие «добавить эксперта домена» в UI) → нативный Alert сам POST'нул webhook за ~4с → resync → `domain_role_directory` обновился (ecl STEWARD += dana), затем реверт так же авто-пропагировался. Кода менять не пришлось.
+- **Опциональный рефайн:** `resources=["all"]` → триггерит на ЛЮБОЕ изменение сущности (full resync каждый раз). Можно сузить фильтр в UI OM до `domain`/`team`/`role`-событий (эффективность; на корректность не влияет, resync идемпотентен).
+- **Управление подпиской через OM API** (admin-токен): `GET/POST /api/v1/events/subscriptions`, `GET /api/v1/events/subscriptions/name/{name}`. JSON Patch домена: `PATCH /api/v1/domains/{omId}` (Content-Type `application/json-patch+json`); NB порядок массива `experts`/`owners` в OM не гарантирован — для удаления конкретного юзера используйте `replace /experts` целиком, не `remove /experts/{i}`.
 - Per-asset ownership webhook (E7, `OwnershipWebhookService`) — отдельный, уже существующий механизм (per-CodeSet asset-роли).
 
 ### 10.7 Реальные OM-id (dev, для справки)
