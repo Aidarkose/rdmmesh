@@ -5,10 +5,14 @@
 > в [`SPEC.md`](../../SPEC.md), [`E2-identity.md`](E2-identity.md) и в memory-файле
 > `project_identity_role_redesign` (auto-memory).
 >
-> **Дата.** 2026-06-27.
-> **Состояние.** Phase 1 редизайна **реализована, закоммичена и запушена** (GitHub + локальный
-> GitLab), но **e2e-деплой не выполнен**. Phases 2–4 не начаты.
-> **Ветка.** `feat/om-rdmmesh-sync`, коммит `4f58f2b`.
+> **Дата.** 2026-06-27 (Phase 1), обновлено 2026-06-30 (Phases 2–4 — см. §10 ниже).
+> **Состояние (на 2026-06-30).** Phases **1, 2, 3 и 4(A+B)** — реализованы, закоммичены,
+> запушены (GitHub `Aidarkose/rdmmesh` + локальный GitLab `root/rdmmesh`) **и задеплоены**
+> (rebuild+recreate, healthy). e2e пройдены (см. §10). Остаётся только Phase **4(C)** —
+> нативная OM Event Subscription (конфиг на стороне OM). **Свежему агенту: читать §10 —
+> там актуальное состояние; §1–9 ниже — исходный контекст Phase 1.**
+> **Ветка.** `feat/om-rdmmesh-sync`. Ключевые коммиты: Phase 1 `4f58f2b`/`6454e0c`;
+> Phase 2 `beb8feb`+`3d1671c`; Phase 3 `bd6c8ff`+`a4bbf06`+`3a510ae`; Phase 4 `06b5aac`.
 
 ---
 
@@ -246,3 +250,72 @@ db `rdmmesh`. Источники: `docker/docker-compose.yml`, `docker/postgres/
   (`KeycloakIdentityPort.java`, `jwt/JwtValidator.java`, `dao/UserMappingDao.java`),
   `bootstrap/sql/migrations/identity/V051__reanchor_object_guid.sql`,
   `docker/keycloak/realms/realm-bank.json`.
+
+---
+
+## 10. SESSION 2 (2026-06-30) — Phases 2, 3, 4: реализация, деплой, e2e
+
+> Это продолжение. Phase 1 (§1–9) уже была. Здесь — **что добавлено во второй сессии**.
+> Всё закоммичено, запушено в оба git-а и **задеплоено** (`docker compose --project-directory
+> <repo>/docker -f .../docker-compose.yml build/up -d --force-recreate --no-deps rdmmesh-service`,
+> healthcheck `http://localhost:8083/healthcheck`).
+
+### 10.0 TL;DR
+- **Phase 2** — иерархия доменов (`parent_om_domain_id`) из OM + UI-дерево.
+- **Phase 3** — доменный fallback владельца, owner subtree-гейт, и **смена маршрута на
+  `STEWARD(author+submit) → OWNER`** (2-eyes, без второго стьюарда; ослаблён no-bypass-инвариант).
+- **Phase 4(A+B)** — `domain_role_directory` и `om_user_id` теперь из **OM** (реальные OM-id) —
+  **конец дрейфа identity**, ради которого всё затевалось.
+- Осталось: **Phase 4(C)** — нативная OM Event Subscription (конфиг в OM).
+
+### 10.1 Phase 2 — иерархия доменов (`beb8feb` + хвост `3d1671c`)
+- Миграция `bootstrap/sql/migrations/catalog/V018__domain_hierarchy.sql`: `catalog.domain.parent_om_domain_id uuid` (NULL=корень, хранится по OM-id, без FK) + index.
+- `DomainDao`: COLUMNS/DomainRow += `parentOmDomainId`; `upsertByOmId` с `COALESCE(EXCLUDED.parent_om_domain_id, …)` (ownership-webhook шлёт null, авторитет — catalog-sync pull); рекурсивные CTE **`descendantOmIds(root)`** (поддерево) и **`ancestorOmIds(omId)`** (цепочка предков) — фундамент Phase 3.
+- `OpenMetadataCatalogClient.listDomains` тянет `parent`; `CatalogMirrorPort.DomainMirror`/`CatalogSyncService` пробрасывают parent.
+- `rdmmesh-spec/schema/entity/domain.json` += `parent_om_domain_id` (codegen Java POJO + TS; `src/generated` gitignored, регенерится из схемы в `node:22`-контейнере — локального node нет).
+- UI `CatalogPage.tsx`: плоский список → antd `Tree` (`buildDomainForest` по `parent_om_domain_id→om_domain_id`).
+
+### 10.2 Phase 3 — fallback владения, owner-гейт, маршрут STEWARD→OWNER
+**Part 1 (`bd6c8ff`):** примитив резолва роли домена с подъёмом по иерархии.
+- `DomainRoleDirectoryDao.resolveWithFallback(domainId, role)` (от домена вверх по предкам — ближайший держатель роли) и `isAuthorizedInSubtree(domainId, role, omUserId)` — рекурсивный SQL поверх `catalog.domain.parent_om_domain_id`. Проброшены через `ApproverDirectoryPort`.
+- `WorkflowService`: OWNER-задача → per-asset owner, иначе доменный владелец с fallback (аддитивно).
+
+**Part 2 (`a4bbf06`):**
+- `WorkflowService.transition`: **owner subtree-гейт** — owner-approval (`decision.setApprover()`) разрешён только держателю BUSINESS_OWNER домена/предка (`isAuthorizedInSubtree`). Активен **только если у домена/предка определён владелец** в directory (иначе пермиссивен — bootstrap, не ломает IT). Не трогает per-asset asset-OWNER и RDM_ADMIN. Маппится в **403** (`InsufficientRoleException` → FORBIDDEN в `WorkflowTransitionResource`).
+- `CatalogService.createCodeSet`: **default-владелец = владелец домена** (resolveWithFallback), НЕ создатель (создатель=стьюард; иначе он единственный owner-кандидат + self-approval-блок). Нет владельца → provisional не ставим. `ApproverDirectoryPort` прокинут через `CatalogModule`→`Application`.
+
+**Workflow STEWARD→OWNER (`3a510ae`)** — потребовалось, иначе одинокий стьюард не мог submit'ить (см. §10.5):
+- `WorkflowGraph.defaultStewardOwner()`: `DRAFT →submit(SUBMIT)→ IN_REVIEW →owner_approve(OWNER,setApprover)→ OWNER_APPROVED →publish→ PUBLISHED` (+owner_reject). **Без отдельной STEWARD-approve-ступени.**
+- `WorkflowGraphInvariants` **ослаблен до 2-eyes**: путь в `OWNER_APPROVED` обязан содержать OWNER-ребро (kind=OWNER); отдельный STEWARD-этап больше НЕ обязателен. Независимость лиц (`owner ≠ created_by`) гарантирует OWNER-guard `StateMachine`. Если граф ВСЁ ЖЕ содержит STEWARD-ступень — OWNER обязан после неё (4-eyes не деградирует). Правило «в терминал только OWNER-ребро» сохранено. Тест `WorkflowGraphInvariantsTest` обновлён (2 устаревших «обязательный STEWARD» → `stewardOwnerTwoEyesIsCompliant` + `stewardKindEdgeIntoTerminalIsRejected`).
+- `WorkflowService.resolveGraph`: дефолт домена без шаблона (и fail-safe) → `defaultStewardOwner`.
+- `WorkflowService.validateAssignee(.., stewardStep)`: STEWARD-проверки assignee (в справочнике, ≠author) — только если граф содержит STEWARD-этап (`nextRequiredRole(IN_REVIEW)==STEWARD`); owner-проверки (в справочнике, ≠author) — всегда.
+- **Решение пользователя:** ослабление 4-eyes→2-eyes согласовано явно (маршрут «строго STEWARD→OWNER» из целевой модели).
+
+### 10.3 Phase 4(A+B) — directory и om_user_id из OM (`06b5aac`) — КОНЕЦ ДРЕЙФА
+- **(A)** `OpenMetadataCatalogClient.listDomains` тянет `fields=…,owners,experts`; `OmEntity` несёт `owners`/`experts` (`OmUserRef id/name/displayName/type`). `CatalogSyncService.resync`: `owners→BUSINESS_OWNER`, `experts→STEWARD` (только `type=user`) → полная замена `domain_role_directory` через `ApproverDirectoryPort.reload(entries, "OM_GENERATED")` (reload пропускается, если список доменов OM пуст — не вайпаем). Добавлен overload `reload(entries, source)`.
+- **(B)** Биндинг `om_user_id` (existing `KeycloakIdentityPort` + `OpenMetadataUserClient` `GET /api/v1/users/name/{username}` — по OM-**username**, не email) резолвит **реальный OM-id**. Легаси-провизорные `om_user_id` в dev-mapping обнулены разово (`UPDATE identity.rdm_user_mapping SET om_user_id=NULL WHERE username IN (…)`) → ребиндятся при логине. **Итог: `mapping.om_user_id == directory.om_user_id` для всех — дрейф устранён by-design** (оба из OM).
+
+### 10.4 Подключение rdmmesh ↔ OpenMetadata (операционка Phase 4)
+- OM запущен в стеке: `om-server` (v1.12.5, healthy), `om-tls` (TLS-терминатор :8443), `om-ingestion`, `om-postgres`, `om-opensearch`. Auth: **basic**, админ `admin@open-metadata.org` пароль `admin` (base64 `YWRtaW4=`).
+- `rdmmesh` ходит в OM по `RDM_OM_BASE_URL=https://om-tls:8443/` (truststore `/opt/rdmmesh/tls/om-ca-truststore.p12` уже в JVM-опциях контейнера). Из контейнера `rdmmesh-service` есть `curl` и доступ к `om-server:8585` (http) — удобно для ручных вызовов OM API.
+- **Bot-token:** ingestion-bot OM не отдаёт в открытом виде → создан **выделенный `rdmmesh-bot`**: `PUT /api/v1/users {"name":"rdmmesh-bot","email":"rdmmesh-bot@open-metadata.org","isBot":true,"authenticationMechanism":{"authType":"JWT","config":{"JWTTokenExpiry":"Unlimited"}}}` (JWT в ответе) → `PUT /api/v1/bots {"name":"rdmmesh-bot","botUser":"rdmmesh-bot"}`. Токен прописан в `docker/.env` `RDM_OM_BOT_TOKEN` (gitignored; не в репо).
+- **Триггер pull:** `POST /api/v1/webhooks/om/catalog-sync` (без подписи всё равно тянет; HMAC-ключ `RDM_OM_WEBHOOK_HMAC_KEY`). Результат: domains_synced=4 (+иерархия `credit_scorr⊂ecl`), roles_synced=17, directoryEntries=8.
+- **Логин в OM для админ-операций:** `POST /api/v1/users/login {"email":"admin@open-metadata.org","password":"YWRtaW4="}` → `accessToken`; затем `Authorization: Bearer`.
+
+### 10.5 e2e-рецепт owner-гейта (повторяемый; движок=enum, rootPath `/api/v1`, app `:8082`, admin `:8083`)
+1. Токены через Keycloak password-grant: `POST http://localhost:8091/realms/bank/protocol/openid-connect/token` (`client_id=rdmmesh-ui`, `username=<u>`, `password=dev`). Юзеры: marat.suleimenov=RDM_STEWARD, aigerim.bekova/dana.akhmetova=RDM_OWNER, timur.iskakov=RDM_STEWARD, dev-admin=RDM_ADMIN.
+2. Создать справочник: `POST /api/v1/codesets/by-domain/{domainId}` `{"name":"…"}` (RDM_STEWARD/ADMIN). Версия: `POST /api/v1/versions/by-codeset/{codesetId}` `{}` → DRAFT 0.1.0.
+3. Submit: `POST /api/v1/versions/{vId}/transitions` `{"to":"IN_REVIEW","assignee":{"domain_id","steward_om_user_id","owner_om_user_id"}}`. **assignee обязателен** (BR-21); в 2-eyes steward-assignee инертен, но поле непустое; owner_om_user_id обязан быть BUSINESS_OWNER домена в directory и ≠ автор.
+4. Owner-approve: `POST …/transitions` `{"to":"OWNER_APPROVED"}` токеном владельца. Свой домен → 200 (далее авто-publish → PUBLISHED). Чужой домен → **403** (гейт).
+- **NB про очистку:** создание справочника провижнит relational physical-таблицы `rd_data.{domain}__{name}__{current,draft,history}` + строку `authoring.codeset_physical_table` (unique по schema/table). При повторных e2e их НАДО чистить (`DROP TABLE rd_data.…` + `DELETE FROM authoring.codeset_physical_table`), иначе следующий `createDraft` падает **500 duplicate key**.
+- **Таблицы для cleanup:** `workflow.{approval_task,version_route,workflow_transition}`, `authoring.{code_set_version_reviewer,code_set_version,codeset_physical_table}`, `rd_data.*` (DROP), `ownership.rdm_asset_ownership`, `catalog.{code_set_schema,code_set}`.
+
+### 10.6 Что осталось — Phase 4(C)
+- Настроить в OM **нативный Alert/Event Subscription** (Observability/Alerts), который при изменении домена/owner шлёт уведомление на `https://<rdmmesh>/api/v1/webhooks/om/catalog-sync` (сейчас триггер ручной). Приёмник (`CatalogSyncWebhookResource`, HMAC-проверка) уже готов. Это конфиг **на стороне OM** (vanilla, без патчей — см. memory `feedback_no_om_modifications`).
+- Per-asset ownership webhook (E7, `OwnershipWebhookService`) — отдельный, уже существующий механизм (per-CodeSet asset-роли).
+
+### 10.7 Реальные OM-id (dev, для справки)
+`marat=1d20721d-b8d4-4b37-9347-ff08c59ac803`, `aigerim=9dabec2b-9d34-40a9-a402-8ee8af0e67cd`,
+`dana=0f133f3b-de5d-4015-b66e-c95570c76296`, `timur=df698ea3-8a30-49ba-a170-5fdf4296f4cc`.
+OM-домены: `ECL`(owner=aigerim, expert=marat), `Airfly`(owner=dana, expert=timur),
+`Credit_Scorr`(⊂ECL; owner=timur, expert=aigerim).
