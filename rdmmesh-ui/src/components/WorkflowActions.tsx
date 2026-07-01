@@ -16,13 +16,12 @@ interface Props {
   domainId?: string | null;
 }
 
-// Какие действия доступны из какого статуса. Совпадает с матрицей StateMachine'а
-// в backend (handoff E5 §1.3 / E6 §1.6). Backend всё равно валидирует — это hint UI.
-//   - submit: DRAFT → IN_REVIEW (E17: с выбором согласующих)
-//   - steward_approve: IN_REVIEW → STEWARD_APPROVED
-//   - steward_reject: IN_REVIEW → DRAFT (comment обязателен)
-//   - owner_approve: STEWARD_APPROVED → OWNER_APPROVED (backend сразу auto-publish'ит)
-//   - owner_reject: STEWARD_APPROVED → DRAFT (comment обязателен)
+// Какие действия доступны из какого статуса. Соответствует дефолтному графу backend
+// STEWARD(author+submit) → OWNER (Phase 3, 2-eyes). Backend всё равно валидирует — это hint UI.
+//   - submit: DRAFT → IN_REVIEW (стьюард-автор выбирает только владельца-согласующего)
+//   - owner_approve: IN_REVIEW → OWNER_APPROVED (backend сразу auto-publish'ит)
+//   - owner_reject: IN_REVIEW → DRAFT (comment обязателен)
+// STEWARD_APPROVED оставлен для legacy-версий, застрявших в старом 4-eyes до перехода.
 type Action = "submit" | "steward_approve" | "steward_reject" | "owner_approve" | "owner_reject";
 
 interface ActionDef {
@@ -44,21 +43,23 @@ const ACTIONS: Partial<Record<VersionStatus, Partial<Record<Action, ActionDef>>>
     },
   },
   IN_REVIEW: {
-    steward_approve: {
-      to: "STEWARD_APPROVED",
+    owner_approve: {
+      to: "OWNER_APPROVED",
       needsComment: false,
       icon: <CheckCircleOutlined />,
-      i18nKey: "workflow.action.stewardApprove",
+      i18nKey: "workflow.action.ownerApprove",
       variant: "primary",
     },
-    steward_reject: {
+    owner_reject: {
       to: "DRAFT",
       needsComment: true,
       icon: <RollbackOutlined />,
-      i18nKey: "workflow.action.stewardReject",
+      i18nKey: "workflow.action.ownerReject",
       variant: "danger",
     },
   },
+  // Legacy: версии, застрявшие в STEWARD_APPROVED от старого 4-eyes — их всё ещё
+  // можно провести владельцу. Новый submit сюда не приводит (граф submit→owner).
   STEWARD_APPROVED: {
     owner_approve: {
       to: "OWNER_APPROVED",
@@ -91,7 +92,6 @@ export function WorkflowActions({ version, domainId }: Props) {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [form] = Form.useForm<{ comment: string }>();
   const [submitForm] = Form.useForm<{
-    steward_om_user_id: string;
     owner_om_user_id: string;
     comment?: string;
   }>();
@@ -118,13 +118,8 @@ export function WorkflowActions({ version, domainId }: Props) {
     },
   });
 
-  // E17 / BR-21: кандидаты-согласующие домена. Грузим лениво — только когда
-  // открыт submit-диалог и известен domainId.
-  const stewards = useQuery({
-    queryKey: qk.domains.approvers(domainId ?? "_pending", "STEWARD"),
-    queryFn: () => api.listApprovers(domainId as string, "STEWARD"),
-    enabled: submitOpen && !!domainId,
-  });
+  // Phase 3 (2-eyes): на submit выбирается только владелец-согласующий (steward-
+  // ступени нет). Кандидатов грузим лениво — когда открыт диалог и известен domainId.
   const owners = useQuery({
     queryKey: qk.domains.approvers(domainId ?? "_pending", "BUSINESS_OWNER"),
     queryFn: () => api.listApprovers(domainId as string, "BUSINESS_OWNER"),
@@ -168,7 +163,6 @@ export function WorkflowActions({ version, domainId }: Props) {
       comment: values.comment?.trim() || undefined,
       assignee: {
         domain_id: domainId as string,
-        steward_om_user_id: values.steward_om_user_id,
         owner_om_user_id: values.owner_om_user_id,
       },
     });
@@ -220,22 +214,6 @@ export function WorkflowActions({ version, domainId }: Props) {
           <Form form={submitForm} layout="vertical" preserve={false}>
             <Form.Item label={t("workflow.submit.domain")}>
               <Input value={domainId} disabled />
-            </Form.Item>
-            <Form.Item
-              label={t("workflow.submit.steward")}
-              name="steward_om_user_id"
-              rules={[{ required: true, message: t("workflow.submit.required") }]}
-            >
-              <Select
-                showSearch
-                optionFilterProp="label"
-                loading={stewards.isLoading}
-                placeholder={t("workflow.submit.stewardPlaceholder")}
-                options={toOptions(stewards.data)}
-                notFoundContent={
-                  stewards.isLoading ? null : t("workflow.submit.empty")
-                }
-              />
             </Form.Item>
             <Form.Item
               label={t("workflow.submit.owner")}

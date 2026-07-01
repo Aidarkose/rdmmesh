@@ -724,11 +724,12 @@ export interface ItemPatchBody {
   effective_to?: string | null;
 }
 
-// E17 / BR-21: при to=IN_REVIEW (submit) assignee обязателен — Author
-// выбирает домен + steward-учётку + business-owner-учётку.
+// E17 / BR-21 → Phase 3 (2-eyes): при to=IN_REVIEW (submit) обязательны домен +
+// business-owner-учётка (маршрут STEWARD-автор → OWNER). steward_om_user_id опционален
+// (нужен только для доменов с 4-eyes-шаблоном).
 export interface TransitionAssignee {
   domain_id: string;
-  steward_om_user_id: string;
+  steward_om_user_id?: string;
   owner_om_user_id: string;
 }
 

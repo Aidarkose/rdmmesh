@@ -283,13 +283,18 @@ public final class WorkflowService {
                     comment);
 
             // E17: атомарно с CAS статуса сохраняем выбранный маршрут
-            // (steward+business-owner), чтобы после steward_approve можно
-            // было адресовать OWNER-задачу выбранному бизнес-владельцу.
+            // (steward+business-owner), чтобы адресовать OWNER-задачу выбранному
+            // бизнес-владельцу. Phase 3 (2-eyes): steward-согласующий опционален —
+            // если не выбран, в маршрут пишем автора (он же steward-автор; steward_user_id
+            // NOT NULL, а steward-задача в 2-eyes-графе всё равно не создаётся).
             if (assignee != null) {
+                UUID routeSteward = assignee.stewardUserId() != null
+                        ? assignee.stewardUserId()
+                        : version.createdBy();
                 handle.attach(
                         bank.rdmmesh.workflow.internal.dao.VersionRouteDao.class)
                         .upsert(versionId, codeSet.domainId(), version.codesetId(),
-                                assignee.stewardUserId(), assignee.ownerUserId(),
+                                routeSteward, assignee.ownerUserId(),
                                 version.createdBy());
             }
 

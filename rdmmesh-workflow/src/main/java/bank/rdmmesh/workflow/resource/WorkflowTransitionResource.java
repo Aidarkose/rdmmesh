@@ -108,23 +108,27 @@ public final class WorkflowTransitionResource {
     }
 
     /**
-     * BR-21: assignee обязателен на submit. Все три поля
-     * (domain_id / steward_om_user_id / owner_om_user_id) — UUID, иначе 400.
+     * BR-21: assignee обязателен на submit. В модели Phase 3 маршрут STEWARD→OWNER
+     * (2-eyes) — обязательны {@code domain_id} + {@code owner_om_user_id}; выбор
+     * стьюарда-согласующего больше не нужен (автор-стьюард сам направляет владельцу),
+     * поэтому {@code steward_om_user_id} опционален. Если граф домена всё же содержит
+     * STEWARD-ступень (4-eyes-шаблон), WorkflowService.validateAssignee потребует steward.
      */
     private static SubmitAssigneeHolder.Assignee parseAssignee(TransitionRequest req) {
         var a = req.getAssignee();
         if (a == null
                 || a.getDomainId() == null
-                || a.getStewardOmUserId() == null
                 || a.getOwnerOmUserId() == null) {
             throw new WebApplicationException(
-                    "submit требует assignee: domain_id + steward_om_user_id"
-                            + " + owner_om_user_id",
+                    "submit требует assignee: domain_id + owner_om_user_id",
                     Response.Status.BAD_REQUEST);
         }
+        UUID steward = a.getStewardOmUserId() == null
+                ? null
+                : parseUuid(a.getStewardOmUserId(), "assignee.steward_om_user_id");
         return new SubmitAssigneeHolder.Assignee(
                 parseUuid(a.getDomainId(), "assignee.domain_id"),
-                parseUuid(a.getStewardOmUserId(), "assignee.steward_om_user_id"),
+                steward,
                 parseUuid(a.getOwnerOmUserId(), "assignee.owner_om_user_id"));
     }
 
