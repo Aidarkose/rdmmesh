@@ -9,6 +9,26 @@ import { useApi } from "@/api/useApi";
 import { useAuth } from "@/auth/AuthContext";
 import { Loader } from "@/components/Loader";
 
+// Имя справочника по его id (в задаче приходит только codesetId-UUID). Пока грузится —
+// показываем «код справочника <короткий id>». Ссылка ведёт на страницу справочника.
+function CodesetLabel({ codesetId }: { codesetId: string }) {
+  const { data } = useQuery({
+    queryKey: qk.codesets.one(codesetId),
+    queryFn: () => api.getCodeSet(codesetId),
+  });
+  const label = data ? (data.display_name ?? data.name) : `код справочника ${codesetId.slice(0, 8)}…`;
+  return <Link to={`/codesets/${codesetId}`}>{label}</Link>;
+}
+
+// createdAt приходит эпохой в секундах (Instant → timestamp), напр. 1782802921.477305.
+// Форматируем в локальную дату/время; на всякий случай понимаем и ISO-строку.
+function formatTs(v: string | number | null | undefined): string {
+  if (v == null || v === "") return "—";
+  const n = typeof v === "number" ? v : Number(v);
+  const d = Number.isFinite(n) ? new Date(n * 1000) : new Date(String(v));
+  return isNaN(d.getTime()) ? String(v) : d.toLocaleString();
+}
+
 export function MyTasksPage() {
   const { t } = useTranslation();
   const { baseRoles } = useAuth();
@@ -51,18 +71,18 @@ export function MyTasksPage() {
                               : task.requiredRole}
                           </Tag>
                           <Typography.Text strong>
-                            {t("tasks.codeset")}: {task.codesetId}
+                            {t("tasks.codeset")}: <CodesetLabel codesetId={task.codesetId} />
                           </Typography.Text>
                         </>
                       }
                       description={
                         <>
                           <Typography.Text type="secondary">
-                            {t("tasks.version")}: {task.versionId}
+                            {t("tasks.version")}: {task.versionId.slice(0, 8)}…
                           </Typography.Text>
                           <br />
                           <Typography.Text type="secondary">
-                            {t("tasks.createdAt")}: {task.createdAt}
+                            {t("tasks.createdAt")}: {formatTs(task.createdAt)}
                           </Typography.Text>
                         </>
                       }
