@@ -30,10 +30,11 @@ export function DomainPage() {
   const id = domainId!;
   const { baseRoles } = useAuth();
   const isAdmin = baseRoles.includes("RDM_ADMIN");
-  const canCreateCodeset =
-    isAdmin ||
-    baseRoles.includes("RDM_AUTHOR") ||
-    baseRoles.includes("RDM_SCHEMA_DESIGNER");
+  // Драфты справочников создают RDM_STEWARD (авторы в целевой модели) и RDM_ADMIN.
+  // Бэкенд POST /codesets/by-domain — @RolesAllowed{RDM_STEWARD, RDM_ADMIN}. Прежние
+  // RDM_AUTHOR/RDM_SCHEMA_DESIGNER удалены в Phase 1 (редизайн ролей) — их больше нет
+  // в Keycloak, из-за чего стьюард не видел кнопку создания.
+  const canCreateCodeset = isAdmin || baseRoles.includes("RDM_STEWARD");
 
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);

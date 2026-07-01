@@ -52,10 +52,11 @@ export function CodeSetPage() {
 
   const { baseRoles } = useAuth();
   const isAdmin = baseRoles.includes("RDM_ADMIN");
-  // E24 — порядок полей схемы правят Schema Designer и Admin (бэкенд: @RolesAllowed).
-  const canEditSchema = isAdmin || baseRoles.includes("RDM_SCHEMA_DESIGNER");
-  // FK-связи между справочниками правят Author / Schema Designer / Admin (бэкенд: @RolesAllowed).
-  const canEditRefs = canEditSchema || baseRoles.includes("RDM_AUTHOR");
+  // Схему и FK-связи правят RDM_STEWARD (авторы в целевой модели) и RDM_ADMIN.
+  // Бэкенд PUT schema/references — @RolesAllowed{RDM_STEWARD, RDM_ADMIN}. Прежние
+  // RDM_SCHEMA_DESIGNER/RDM_AUTHOR удалены в Phase 1 (редизайн ролей).
+  const canEditSchema = isAdmin || baseRoles.includes("RDM_STEWARD");
+  const canEditRefs = canEditSchema;
 
   const codeset = useApi(() => api.getCodeSet(id), qk.codesets.one(id));
   const schema = useApi(() => api.getActiveSchema(id), qk.codesets.schema(id));
