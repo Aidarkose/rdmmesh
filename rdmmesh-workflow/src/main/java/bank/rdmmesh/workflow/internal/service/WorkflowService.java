@@ -230,6 +230,13 @@ public final class WorkflowService {
         } else if (assignee != null && "STEWARD".equals(nextRole)) {
             candidates = new UUID[] { assignee.stewardUserId() };
             assignedRole = bank.rdmmesh.api.port.ApproverDirectoryPort.STEWARD;
+        } else if (assignee != null && "OWNER".equals(nextRole)) {
+            // Phase 3 (2-eyes): submit ведёт СРАЗУ к OWNER — задачу адресуем выбранному
+            // владельцу-согласующему из assignee. Приоритет над per-asset owner'ом ниже:
+            // на submit route в этой же tx ещё НЕ создан (route.isPresent()==false), а
+            // per-asset owner может быть устаревшим/чужим — явный выбор автора важнее.
+            candidates = new UUID[] { assignee.ownerUserId() };
+            assignedRole = bank.rdmmesh.api.port.ApproverDirectoryPort.BUSINESS_OWNER;
         } else if (route.isPresent() && "OWNER".equals(nextRole)) {
             candidates = new UUID[] { route.get().ownerUserId() };
             assignedRole = bank.rdmmesh.api.port.ApproverDirectoryPort.BUSINESS_OWNER;
